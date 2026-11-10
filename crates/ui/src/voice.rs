@@ -1050,6 +1050,14 @@ impl MessagingUi {
 				}
 				let locally_muted = self.voice_user_locally_muted(entry.participant.user);
 				let shown = shown_participant(state, entry);
+				// Someone else's live share opens from their LIVE badge or name, as in Discord;
+				// the context menu and hover preview keep working as before.
+				let opens_stream = entry.participant.streaming
+					&& state
+						.user
+						.as_ref()
+						.is_none_or(|own| own.id != entry.participant.user);
+				let mut live_clicked = false;
 				inner.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
 					// Deafening implies muted; Discord shows only the headphones then.
 					if shown.deafened || shown.server_deafened {
@@ -1084,7 +1092,7 @@ impl MessagingUi {
 						);
 					}
 					if entry.participant.streaming {
-						live_badge(ui);
+						live_clicked = live_badge_button(ui, opens_stream, name).clicked();
 					}
 					ui.allocate_ui_with_layout(
 						egui::vec2(ui.available_width(), 28.0),
@@ -1104,7 +1112,9 @@ impl MessagingUi {
 				if entry.participant.streaming {
 					self.stream_preview_popup(ui, &row, state, entry);
 				}
-				if let Some(user) = user {
+				if opens_stream && (live_clicked || row.clicked()) {
+					self.open_stream(entry.channel, entry.participant.user);
+				} else if let Some(user) = user {
 					self.profile.person_click(ui, &row, None, user);
 				}
 			},
@@ -1317,8 +1327,7 @@ impl MessagingUi {
 								}
 							}
 							if can_open && preview_response.clicked() {
-								self.stream_preview_watch =
-									Some((entry.channel, entry.participant.user));
+								self.open_stream(entry.channel, entry.participant.user);
 								watch_clicked = true;
 							}
 							let button_label = if is_own {
@@ -1339,12 +1348,13 @@ impl MessagingUi {
 								.inner
 								.on_disabled_hover_text(if is_own {
 									"You are already streaming in this channel"
+								} else if watching {
+									"Already watching this stream"
 								} else {
 									"Join this voice channel before watching"
 								});
 							if button.clicked() {
-								self.stream_preview_watch =
-									Some((entry.channel, entry.participant.user));
+								self.open_stream(entry.channel, entry.participant.user);
 								watch_clicked = true;
 							}
 						})
@@ -1373,6 +1383,13 @@ impl MessagingUi {
 		}
 	}
 
+	/// Watch `user`'s live share in `channel` and show it: join the channel when needed, open
+	/// its stage and enlarge exactly this stream, whichever others are live.
+	fn open_stream(&mut self, channel: Id, user: Id) {
+		self.stream_preview_watch = Some((channel, user));
+		self.stream_preview_navigate = true;
+	}
+
 	pub(super) fn apply_stream_preview_watch(
 		&mut self,
 		state: &mut State,
@@ -1397,8 +1414,17 @@ impl MessagingUi {
 		});
 		if !live {
 			self.stream_preview_watch = None;
+			self.stream_preview_navigate = false;
 			state.status = "This stream is no longer live";
 			return;
+		}
+		// Opened from the sidebar or a preview: bring up that channel's stage once, so the
+		// stream shows without finding it there. Later frames leave navigation to the user.
+		if std::mem::take(&mut self.stream_preview_navigate)
+			&& state.selected != Some(channel)
+			&& let Some(command) = state.select(channel)
+		{
+			commands.push(command);
 		}
 		let mut open_stage = false;
 		match state
@@ -5711,7 +5737,26 @@ fn status_icon(ui: &mut egui::Ui, icon: crate::icons::Icon, color: egui::Color32
 }
 
 /// Discord's LIVE pill, sized for the channel list row rather than a stage tile.
-fn live_badge(ui: &mut egui::Ui) {
+/// The LIVE badge as a button that opens `name`'s stream; inert when `enabled` is false.
+fn live_badge_button(ui: &mut egui::Ui, enabled: bool, name: &str) -> egui::Response {
+	let response = live_badge(ui);
+	if !enabled {
+		return response;
+	}
+	let response = ui.interact(
+		response.rect,
+		response.id.with("watch"),
+		egui::Sense::click(),
+	);
+	response.widget_info(|| {
+		egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Watch {name}'s stream"))
+	});
+	response
+		.on_hover_text(format!("Watch {name}'s stream"))
+		.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
+fn live_badge(ui: &mut egui::Ui) -> egui::Response {
 	let text = crate::i18n::translate("voice-live-badge-live");
 	let font_id = egui::FontId::new(9.0, design::medium_family(ui.ctx()));
 	let galley = ui
@@ -5733,7 +5778,7 @@ fn live_badge(ui: &mut egui::Ui) {
 			crate::i18n::translate("voice-live-badge-live-2"),
 		)
 	});
-	response.on_hover_text(crate::i18n::translate("voice-live-badge-streaming"));
+	response.on_hover_text(crate::i18n::translate("voice-live-badge-streaming"))
 }
 
 /// Device discovery is underway; shown only as the select's contents, never as text.
@@ -7266,6 +7311,76 @@ mod tests {
 		frame(&mut messaging, vec![press(true)], 0.03);
 		frame(&mut messaging, vec![press(false)], 0.04);
 		assert_eq!(messaging.stream_preview_watch, Some((channel, Id(3))));
+	}
+
+	/// Clicking a live participant's name opens their stream: with two people live, exactly the
+	/// clicked one, with that channel's stage selected; an ended stream opens nothing.
+	#[test]
+	fn clicking_a_live_participant_opens_exactly_their_stream() {
+		let mut state = test_support::demo_state();
+		let live = |user| RosterEntry {
+			guild: Id(10),
+			channel: Id(25),
+			participant: client_core::voice::Participant {
+				user: Id(user),
+				muted: false,
+				deafened: false,
+				server_muted: false,
+				server_deafened: false,
+				video: false,
+				streaming: true,
+			},
+			member: None,
+		};
+		state.voice.roster = vec![live(2), live(3)];
+		assert_ne!(state.selected, Some(Id(25)));
+		let mut messaging = MessagingUi::default();
+		let ctx = egui::Context::default();
+		let screen = Some(egui::Rect::from_min_size(
+			egui::Pos2::ZERO,
+			egui::vec2(640.0, 420.0),
+		));
+		let click = egui::pos2(60.0, 17.0);
+		for (pressed, moved) in [(None, true), (Some(true), false), (Some(false), false)] {
+			let mut events = Vec::new();
+			if moved {
+				events.push(egui::Event::PointerMoved(click));
+			}
+			if let Some(pressed) = pressed {
+				events.push(egui::Event::PointerButton {
+					pos: click,
+					button: egui::PointerButton::Primary,
+					pressed,
+					modifiers: Default::default(),
+				});
+			}
+			ctx.run_ui(
+				egui::RawInput {
+					screen_rect: screen,
+					events,
+					..Default::default()
+				},
+				// The second live participant's row is the only one under the pointer.
+				|ui| {
+					ui.set_width(190.0);
+					messaging.voice_participant(ui, &state, &state.voice.roster[1]);
+				},
+			)
+			.drop_without_applying_deltas();
+		}
+		assert_eq!(messaging.stream_preview_watch, Some((Id(25), Id(3))));
+		assert!(messaging.stream_preview_navigate);
+		let mut commands = Vec::new();
+		messaging.apply_stream_preview_watch(&mut state, &mut commands);
+		assert_eq!(state.selected, Some(Id(25)));
+		assert!(!messaging.stream_preview_navigate);
+		// A share that ended meanwhile neither navigates nor watches.
+		let before = state.selected;
+		messaging.open_stream(Id(25), Id(4));
+		messaging.apply_stream_preview_watch(&mut state, &mut commands);
+		assert_eq!(state.selected, before);
+		assert!(messaging.stream_preview_watch.is_none() && !messaging.stream_preview_navigate);
+		assert_eq!(state.status, "This stream is no longer live");
 	}
 
 	#[test]
