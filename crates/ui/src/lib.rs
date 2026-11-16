@@ -126,6 +126,7 @@ mod setup;
 mod shortcuts;
 mod skeleton;
 mod slowmode;
+mod soundboard;
 mod switcher;
 mod text_menu;
 mod thumbhash;
@@ -154,12 +155,15 @@ pub use voice_latency::VoiceLatency;
 pub struct VoiceGain {
 	pub input_percent: u16,
 	pub output_percent: u16,
+	/// Received soundboard sounds (0–200%), applied before the speaker volume.
+	pub soundboard_percent: u16,
 }
 impl Default for VoiceGain {
 	fn default() -> Self {
 		Self {
 			input_percent: 100,
 			output_percent: 100,
+			soundboard_percent: 100,
 		}
 	}
 }
@@ -550,6 +554,8 @@ pub struct MessagingUi {
 	pub voice_input: Option<String>,
 	pub voice_output: Option<String>,
 	pub voice_gain: VoiceGain,
+	/// Soundboard search text; session-only.
+	soundboard_query: String,
 	voice_user_volumes: Option<Box<[(u64, u16); 64]>>,
 	/// Speakers silenced on this device only; never sent to Discord.
 	voice_user_muted: Vec<u64>,

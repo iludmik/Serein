@@ -81,6 +81,8 @@ pub struct AppPreferences {
 	pub voice_output: Option<String>,
 	pub input_percent: u16,
 	pub output_percent: u16,
+	/// Local playback level of received soundboard sounds; older preferences play them at 100%.
+	pub soundboard_percent: u16,
 	/// Which GPU renders the window; applied on the next start.
 	pub gpu_preference: model::GpuPreference,
 	/// Preferred graphics API; applied on restart, with Automatic as a driver fallback.
@@ -144,6 +146,7 @@ impl Default for AppPreferences {
 			voice_output: None,
 			input_percent: 100,
 			output_percent: 100,
+			soundboard_percent: 100,
 			gpu_preference: Default::default(),
 			graphics_api: Default::default(),
 			steady_refresh_rate: false,
@@ -173,6 +176,7 @@ impl AppPreferences {
 			&& self.blur <= 100
 			&& self.input_percent <= 200
 			&& self.output_percent <= 200
+			&& self.soundboard_percent <= 200
 			&& self
 				.voice_processing
 				.is_none_or(|value| value.custom.is_valid())
@@ -2198,6 +2202,9 @@ mod tests {
 		assert!(legacy.voice_processing.is_none());
 		assert!(legacy.voice_noise_suppression);
 		assert!(!legacy.hide_blocked_messages && !legacy.hide_ignored_messages);
+		// Preferences saved before the soundboard existed play sounds at full level.
+		assert_eq!(legacy.soundboard_percent, 100);
+		// Existing installs run first-run setup once, like a fresh one.
 		assert!(!legacy.setup_done);
 		// Existing serialized bindings omit the newly optional diagnostics shortcut.
 		let mut old_bindings = serde_json::to_value(model::Keybinds::default()).unwrap();
@@ -2316,6 +2323,9 @@ mod tests {
 		assert!(store.save_app_preferences(&value).is_err());
 		assert_eq!(store.app_preferences().unwrap().input_percent, 100);
 		value.input_percent = 100;
+		value.soundboard_percent = 201;
+		assert!(store.save_app_preferences(&value).is_err());
+		value.soundboard_percent = 100;
 		value.voice_input = Some("x".repeat(1025));
 		assert!(store.save_app_preferences(&value).is_err());
 		assert_eq!(

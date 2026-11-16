@@ -44,6 +44,7 @@ pub enum Icon {
 	Eye,
 	Activities,
 	Soundboard,
+	MusicNotes,
 	Reply,
 	Pencil,
 	More,
@@ -138,7 +139,7 @@ pub enum Icon {
 
 impl Icon {
 	/// Canonical atlas cells; Forward reuses the mirrored Reply cell.
-	pub const ALL: [Icon; 112] = [
+	pub const ALL: [Icon; 113] = [
 		Icon::ChevronDown,
 		Icon::ChevronRight,
 		Icon::Gear,
@@ -164,6 +165,7 @@ impl Icon {
 		Icon::Eye,
 		Icon::Activities,
 		Icon::Soundboard,
+		Icon::MusicNotes,
 		Icon::Reply,
 		Icon::Pencil,
 		Icon::More,
@@ -282,6 +284,7 @@ impl Icon {
 			Icon::Eye => "eye",
 			Icon::Activities => "rocket-launch",
 			Icon::Soundboard => "waveform",
+			Icon::MusicNotes => "music-notes",
 			Icon::Reply | Icon::Forward => "arrow-bend-up-left",
 			Icon::Pencil => "pencil-simple",
 			Icon::More => "dots-three",

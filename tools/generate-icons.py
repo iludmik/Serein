@@ -130,6 +130,7 @@ ICONS = [
     ("selection-all", "bold/selection-all-bold.svg", "a5db79d398382ba9c9bf0abe75290e46cf11c41464be439b66c8e3ee30a716a3"),
     ("monitor-x", "repo:assets/icons/monitor-x.svg", "5850e9e31daefe53ac6e117abd690e5171c055b40cbdd9337948bd2fbbfc11a9"),
     ("eye", "fill/eye-fill.svg", "86381b51cb6f305019503b4c5d4b02fe8df5941bab3f1475ee873006a8708420"),
+    ("music-notes", "fill/music-notes-fill.svg", "ddfa03bf39856870a4898b830525136583179dc019aa0ab8689eb5b7a65bc50d"),
 ]
 LICENSE_SHA256 = "ddbe6082ec3cf979db47e5af549d2849c5d6182b3e005ef91ce1dbb9eb122f11"
 
@@ -201,7 +202,8 @@ def main():
     for cell, (name, asset, sha256, simple) in enumerate(sources):
         local = asset.startswith("repo:")
         if local:
-            svg = (root / asset.removeprefix("repo:")).read_bytes()
+            # Pinned repository hashes use Git's LF bytes, including on CRLF checkouts.
+            svg = (root / asset.removeprefix("repo:")).read_bytes().replace(b"\r\n", b"\n")
         else:
             svg = fetch(asset, SIMPLE_BASE) if simple else fetch(f"assets/{asset}")
         digest = hashlib.sha256(svg).hexdigest()
@@ -247,7 +249,7 @@ def main():
         subprocess.run(["oxipng", "-o", "max", "--strip", "all", "-q", destination / "atlas.png"], check=True)
     else:
         print("oxipng not found; atlas.png left at resvg compression", file=sys.stderr)
-    (destination / "index.tsv").write_text("".join(f"{name}\t{cell}\n" for name, cell in index), encoding="utf-8")
+    (destination / "index.tsv").write_bytes("".join(f"{name}\t{cell}\n" for name, cell in index).encode("utf-8"))
     (destination / "LICENSE").write_bytes(license_text)
     (destination / "LICENSE-SIMPLE-ICONS").write_bytes(simple_license)
     print(f"{len(sources)} icons; {width}x{height}; atlas {(destination / 'atlas.png').stat().st_size} bytes")
