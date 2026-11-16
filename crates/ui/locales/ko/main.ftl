@@ -5198,3 +5198,6 @@ inbox-open-message = 메시지 열기
 inbox-spoiler = 스포일러
 inbox-empty-page = 이 페이지에 읽을 수 있는 멘션이 없습니다. 이전 멘션을 사용해 보세요.
 inbox-media-preview = 첨부 파일 또는 포함된 콘텐츠
+name-marks-server-owner = 서버 소유자
+name-marks-tag-admin = 관리자
+name-marks-tag-moderator = 모더레이터

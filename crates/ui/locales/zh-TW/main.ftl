@@ -5053,3 +5053,6 @@ moderation-confirm-ban = 停權
 inbox-spoiler = 劇透
 inbox-empty-page = 此頁沒有可檢視的提及。請嘗試檢視更早的提及。
 inbox-media-preview = 附件或嵌入內容
+name-marks-server-owner = 伺服器擁有者
+name-marks-tag-admin = 管理員
+name-marks-tag-moderator = 版主

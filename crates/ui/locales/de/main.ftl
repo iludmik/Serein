@@ -4965,3 +4965,6 @@ moderation-confirm-ban = Bannen
 inbox-spoiler = Spoiler
 inbox-empty-page = Keine lesbaren Erwähnungen auf dieser Seite. Versuche ältere Erwähnungen.
 inbox-media-preview = Anhang oder Einbettung
+name-marks-server-owner = Serverbesitzer
+name-marks-tag-admin = Admin
+name-marks-tag-moderator = Mod

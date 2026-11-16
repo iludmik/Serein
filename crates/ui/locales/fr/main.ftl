@@ -4964,3 +4964,6 @@ moderation-confirm-ban = Bannir
 inbox-spoiler = Spoiler
 inbox-empty-page = Aucune mention accessible sur cette page. Essayez les mentions plus anciennes.
 inbox-media-preview = Pièce jointe ou contenu intégré
+name-marks-server-owner = Propriétaire du serveur
+name-marks-tag-admin = Admin
+name-marks-tag-moderator = Modo

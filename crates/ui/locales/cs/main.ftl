@@ -5104,3 +5104,6 @@ moderation-confirm-ban = Zabanovat
 inbox-spoiler = Spoiler
 inbox-empty-page = Na této stránce nejsou dostupné zmínky. Zkuste Starší zmínky.
 inbox-media-preview = Příloha nebo vložený obsah
+name-marks-server-owner = Vlastník serveru
+name-marks-tag-admin = Admin
+name-marks-tag-moderator = Mod

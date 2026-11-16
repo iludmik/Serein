@@ -4976,3 +4976,6 @@ moderation-confirm-ban = Забанить
 inbox-spoiler = Спойлер
 inbox-empty-page = На этой странице нет доступных упоминаний. Попробуйте более старые упоминания.
 inbox-media-preview = Вложение или встроенный контент
+name-marks-server-owner = Владелец сервера
+name-marks-tag-admin = Админ
+name-marks-tag-moderator = Модер

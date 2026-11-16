@@ -4942,3 +4942,6 @@ moderation-confirm-ban = Yasakla
 inbox-spoiler = Spoiler
 inbox-empty-page = Bu sayfada okunabilir bahsetme yok. Daha eski bahsetmeleri deneyin.
 inbox-media-preview = Ek veya gömülü içerik
+name-marks-server-owner = Sunucu Sahibi
+name-marks-tag-admin = Yönetici
+name-marks-tag-moderator = Mod

@@ -78,6 +78,7 @@ mod member_platforms;
 mod member_search;
 mod mentions;
 mod messaging_permissions;
+mod name_marks;
 mod notification_settings;
 mod notifications;
 mod pending;
@@ -1992,12 +1993,17 @@ impl MessagingUi {
 												.primary_guild
 												.as_deref()
 												.filter(|_| !self.cosmetics.hide_clan_tags);
+											let marks = name_marks::Marks::of(
+												state,
+												&member.user,
+												(guild, &member.roles),
+											);
 											let trailing =
 												profiles::server_tag_width(ui, server_tag)
 													+ if server_tag.is_some() { 5.0 } else { 0.0 }
-													+ platforms.clone().count() as f32
-														* (member_platforms::SIZE
-															+ ui.spacing().item_spacing.x);
+													+ marks.reserve() + platforms.clone().count()
+													as f32 * (member_platforms::SIZE
+													+ ui.spacing().item_spacing.x);
 											crate::name_styles::in_row(
 												response.contains_pointer() || response.has_focus(),
 												|| {
@@ -2030,6 +2036,7 @@ impl MessagingUi {
 													state.demo,
 												);
 											}
+											marks.show(ui);
 											let platform_color = match status {
 												Some("idle") => colors.warning,
 												Some("dnd") => colors.danger,
