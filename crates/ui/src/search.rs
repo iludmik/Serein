@@ -1872,6 +1872,7 @@ impl SearchUi {
 										&mut self.opening,
 										media.download,
 										profile,
+										media.video,
 										state,
 										crate::design::MessageCardSurface::Opaque,
 										false,
