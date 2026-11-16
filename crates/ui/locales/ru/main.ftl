@@ -4968,3 +4968,7 @@ moderation-delete-week = Последние 7 дней
 moderation-confirm-timeout = Тайм-аут
 # Context: moderation
 moderation-confirm-ban = Забанить
+
+inbox-spoiler = Спойлер
+inbox-empty-page = На этой странице нет доступных упоминаний. Попробуйте более старые упоминания.
+inbox-media-preview = Вложение или встроенный контент

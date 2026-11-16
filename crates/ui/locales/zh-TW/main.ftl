@@ -5049,3 +5049,7 @@ moderation-delete-week = 過去 7 天
 moderation-confirm-timeout = 禁言
 # Context: moderation
 moderation-confirm-ban = 停權
+
+inbox-spoiler = 劇透
+inbox-empty-page = 此頁沒有可檢視的提及。請嘗試檢視更早的提及。
+inbox-media-preview = 附件或嵌入內容

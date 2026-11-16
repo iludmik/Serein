@@ -2089,3 +2089,12 @@ reused; a full active tracker returns a local capacity failure. Session teardown
 drops the tracker. The existing semaphore allows at most four admitted REST
 requests; caller queues retain their own bounds. There is no new disk storage
 or logging.
+
+## Recent mentions inbox
+
+One on-demand page stays in session memory: at most 25 messages and 1 MiB of message data,
+with wire replies limited to 2 MiB. While a request is pending, up to 1,024 mutated
+channel/message identities (16 KiB) prevent stale edited or deleted results from reappearing.
+Overflow invalidates the request rather than dropping mutation records; the user can refresh.
+The identities are released when the response completes or the request is cleared/replaced.
+Closing the inbox and account/access changes clear the page; no inbox data is persisted.

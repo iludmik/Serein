@@ -4356,6 +4356,15 @@ voice-voice-participant-deafened-by-server = Deafened by server
 voice-voice-participant-menu-mute = Mute
 # Context: voice_participant_menu
 voice-voice-participant-menu-reset-volume = Reset volume
+inbox-title = Inbox
+inbox-description = Direct, role and everyone mentions from the past 7 days
+inbox-loading = Loading mentions…
+inbox-empty = No recent mentions in available conversations.
+inbox-refresh-needed = Refresh to load recent mentions.
+inbox-refresh = Refresh
+inbox-retry = Retry
+inbox-older = Older mentions
+inbox-open-message = Open message
 voice-server-mute = Server mute
 voice-server-unmute = Server unmute
 voice-move-to = Move to
@@ -5199,3 +5208,7 @@ moderation-delete-week = Previous 7 days
 moderation-confirm-timeout = Timeout
 # Context: moderation
 moderation-confirm-ban = Ban
+
+inbox-spoiler = Spoiler
+inbox-empty-page = No readable mentions on this page. Try Older mentions.
+inbox-media-preview = Attachment or embed

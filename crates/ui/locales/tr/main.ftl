@@ -4938,3 +4938,7 @@ moderation-delete-week = Son 7 gün
 moderation-confirm-timeout = Zaman aşımı
 # Context: moderation
 moderation-confirm-ban = Yasakla
+
+inbox-spoiler = Spoiler
+inbox-empty-page = Bu sayfada okunabilir bahsetme yok. Daha eski bahsetmeleri deneyin.
+inbox-media-preview = Ek veya gömülü içerik

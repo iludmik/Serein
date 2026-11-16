@@ -4960,3 +4960,7 @@ moderation-delete-week = Ultimi 7 giorni
 moderation-confirm-timeout = Timeout
 # Context: moderation
 moderation-confirm-ban = Banna
+
+inbox-spoiler = Spoiler
+inbox-empty-page = Nessuna menzione accessibile in questa pagina. Prova le menzioni precedenti.
+inbox-media-preview = Allegato o contenuto incorporato

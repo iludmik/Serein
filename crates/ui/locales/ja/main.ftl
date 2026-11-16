@@ -4935,3 +4935,7 @@ moderation-delete-week = 過去7日間
 moderation-confirm-timeout = タイムアウト
 # Context: moderation
 moderation-confirm-ban = BAN
+
+inbox-spoiler = ネタバレ
+inbox-empty-page = このページには閲覧できるメンションがありません。古いメンションをお試しください。
+inbox-media-preview = 添付ファイルまたは埋め込み

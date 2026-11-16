@@ -466,6 +466,7 @@ impl Connection {
 				let mut stream_preview:Option<AbortTask>=None;
                 let mut invite:Option<AbortTask>=None;
                 let mut search:Option<AbortTask>=None;
+                let mut mentions:Option<AbortTask>=None;
                 let mut gifs:Option<AbortTask>=None;
                 // One default-catalog read; sends run side by side (core bounds how many) so a
                 // new sound never aborts an earlier one whose reply is still due.
@@ -512,7 +513,7 @@ impl Connection {
                         }
                         changed=voice_availability.changed()=> {
 							if changed.is_err() {break;}
-							if !*voice_availability.borrow_and_update() {drop(ringing.take());drop(recipient_ringing.take());drop(profile.take());drop(stream_preview.take());drop(search.take());voice_request=None;recipient_call.lock().map_err(|_|Failure::Protocol)?.active=None;if let Some(cancel)=&upload_cancel {let _=cancel.send(true);}}
+							if !*voice_availability.borrow_and_update() {drop(ringing.take());drop(recipient_ringing.take());drop(profile.take());drop(stream_preview.take());drop(search.take());drop(mentions.take());voice_request=None;recipient_call.lock().map_err(|_|Failure::Protocol)?.active=None;if let Some(cancel)=&upload_cancel {let _=cancel.send(true);}}
                         }
                         request=upload_receive.recv()=>{
                             let Some(request)=request else {break;};
@@ -569,6 +570,19 @@ impl Connection {
                                 command=>command,
                             };
                             if matches!(command,Command::CancelSearch) {drop(search.take());continue;}
+                            if matches!(command,Command::CancelMentions) {drop(mentions.take());continue;}
+                            if matches!(command,Command::Mentions{..}) {
+                                drop(mentions.take());
+                                let api=api.clone();let emit=emit.clone();let finished=finished.clone();let wake=wake.clone();
+                                mentions=Some(AbortTask(tokio::spawn(async move {
+                                    let event=api.execute(command).await;
+                                    let failure=match &event {Event::Mentions{result:Err(f),..} if f.ends_session() && *f!=Failure::Capacity=>Some(*f),_=>None};
+                                    let error=emit(event).err().or(failure);
+                                    if let Some(error)=error {api.stop();let _=finished.send(Some(error));}
+                                    wake.request_repaint();
+                                })));
+                                continue;
+                            }
                             if matches!(command,Command::CancelGifs) {drop(gifs.take());continue;}
                             if matches!(command,Command::Typing{..}) {
                                 let revision=write_order.invalidate_typing();
