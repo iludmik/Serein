@@ -4723,6 +4723,10 @@ screen-macos-system-picker = macOS 시스템 선택기로 선택
 screen-macos-system-picker-kind = 시스템 콘텐츠 선택기
 
 member-in-voice = 음성 채널 참여 중
+member-platform-desktop = 데스크톱
+member-platform-mobile = 모바일
+member-platform-web = 웹 브라우저
+member-platform-vr = VR 헤드셋
 settings-chat-box = 채팅 입력창
 settings-convert-emoticons = 메시지의 이모티콘을 이모지로 자동 변환
 settings-convert-emoticons-description = 메시지를 보내거나 편집할 때 :) 같은 단독 이모티콘을 🙂로 변환합니다. 코드와 링크는 변경하지 않습니다.
@@ -5181,3 +5185,16 @@ settings-prefer-friend-nickname = 친구 별명 우선
 # Context: chat_settings
 settings-prefer-friend-nickname-description = 확인된 친구에게 비공개 별명을 지정한 경우 서버 별명 대신 해당 별명을 표시합니다. 다른 이름 표시는 그대로 유지됩니다.
 
+
+inbox-title = 받은 편지함
+inbox-description = 지난 7일 동안의 직접, 역할, 모두 멘션
+inbox-loading = 멘션 불러오는 중…
+inbox-empty = 사용 가능한 대화에 최근 멘션이 없습니다.
+inbox-refresh-needed = 최근 멘션을 불러오려면 새로 고침하세요.
+inbox-refresh = 새로 고침
+inbox-retry = 다시 시도
+inbox-older = 이전 멘션
+inbox-open-message = 메시지 열기
+inbox-spoiler = 스포일러
+inbox-empty-page = 이 페이지에 읽을 수 있는 멘션이 없습니다. 이전 멘션을 사용해 보세요.
+inbox-media-preview = 첨부 파일 또는 포함된 콘텐츠
