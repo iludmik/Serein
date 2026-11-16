@@ -4230,6 +4230,30 @@ voice-mute-toggle-with-settings-output-settings = Impostazioni di uscita
 voice-stream-audio-controls-mute-stream-audio = Disattiva l'audio in streaming
 # Context: stream_audio_controls
 voice-stream-audio-controls-stream-volume = Volume dello streaming
+# Context: stream_pip
+voice-stream-pip-popout-player = Lettore separato
+# Context: stream_pip
+voice-stream-pip-return-to-call = Torna alla chiamata
+# Context: stream_pip
+voice-stream-pip-screen = Schermo di { $name }
+# Context: stream_pip
+voice-stream-pip-stop-watching = Interrompi visione
+# Context: stream_popout
+voice-stream-popout-close = Chiudi il lettore separato
+# Context: stream_popout
+voice-stream-popout-connecting = Connessione allo streaming…
+# Context: stream_popout
+voice-stream-popout-open = Apri lo streaming in una finestra separata
+# Context: stream_popout
+voice-stream-popout-participant = Partecipante
+# Context: stream_popout
+voice-stream-popout-pin-on-top = Fissa in alto (Sempre in primo piano)
+# Context: stream_popout
+voice-stream-popout-player = Lettore separato
+# Context: stream_popout
+voice-stream-popout-title = Schermo di { $name } - Lettore separato
+# Context: stream_popout
+voice-stream-popout-unpin = Sgancia dalla parte superiore
 # Context: stream_tile
 voice-stream-tile-stream-audio = Trasmetti audio in streaming
 # Context: stream_tile

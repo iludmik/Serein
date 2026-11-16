@@ -4254,6 +4254,30 @@ voice-mute-toggle-with-settings-output-settings = 輸出設定
 voice-stream-audio-controls-mute-stream-audio = 靜音串流音訊
 # Context: stream_audio_controls
 voice-stream-audio-controls-stream-volume = 串流音量
+# Context: stream_pip
+voice-stream-pip-popout-player = 彈出式播放器
+# Context: stream_pip
+voice-stream-pip-return-to-call = 返回通話
+# Context: stream_pip
+voice-stream-pip-screen = { $name } 的畫面
+# Context: stream_pip
+voice-stream-pip-stop-watching = 停止觀看
+# Context: stream_popout
+voice-stream-popout-close = 關閉彈出式播放器
+# Context: stream_popout
+voice-stream-popout-connecting = 正在連線至直播…
+# Context: stream_popout
+voice-stream-popout-open = 在彈出式視窗中開啟直播
+# Context: stream_popout
+voice-stream-popout-participant = 參與者
+# Context: stream_popout
+voice-stream-popout-pin-on-top = 置頂（永遠在最上層）
+# Context: stream_popout
+voice-stream-popout-player = 彈出式播放器
+# Context: stream_popout
+voice-stream-popout-title = { $name } 的畫面 - 彈出式播放器
+# Context: stream_popout
+voice-stream-popout-unpin = 取消置頂
 # Context: stream_tile
 voice-stream-tile-stream-audio = 串流音訊
 # Context: stream_tile

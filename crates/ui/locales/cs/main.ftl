@@ -4265,6 +4265,30 @@ voice-mute-toggle-with-settings-output-settings = Nastavení výstupu
 voice-stream-audio-controls-mute-stream-audio = Ztlumit streamovaný zvuk
 # Context: stream_audio_controls
 voice-stream-audio-controls-stream-volume = Hlasitost streamu
+# Context: stream_pip
+voice-stream-pip-popout-player = Přehrávač v samostatném okně
+# Context: stream_pip
+voice-stream-pip-return-to-call = Zpět k hovoru
+# Context: stream_pip
+voice-stream-pip-screen = Obrazovka: { $name }
+# Context: stream_pip
+voice-stream-pip-stop-watching = Přestat sledovat
+# Context: stream_popout
+voice-stream-popout-close = Zavřít přehrávač v samostatném okně
+# Context: stream_popout
+voice-stream-popout-connecting = Připojování k přenosu…
+# Context: stream_popout
+voice-stream-popout-open = Otevřít přenos v samostatném okně
+# Context: stream_popout
+voice-stream-popout-participant = Účastník
+# Context: stream_popout
+voice-stream-popout-pin-on-top = Připnout nahoru (Vždy navrchu)
+# Context: stream_popout
+voice-stream-popout-player = Přehrávač v samostatném okně
+# Context: stream_popout
+voice-stream-popout-title = Obrazovka: { $name } - přehrávač v samostatném okně
+# Context: stream_popout
+voice-stream-popout-unpin = Odepnout z vrchu
 # Context: stream_tile
 voice-stream-tile-stream-audio = Streamujte zvuk
 # Context: stream_tile

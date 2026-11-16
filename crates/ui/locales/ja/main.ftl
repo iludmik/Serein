@@ -4216,6 +4216,30 @@ voice-mute-toggle-with-settings-output-settings = 出力設定
 voice-stream-audio-controls-mute-stream-audio = ストリーム音声をミュートする
 # Context: stream_audio_controls
 voice-stream-audio-controls-stream-volume = ストリームボリューム
+# Context: stream_pip
+voice-stream-pip-popout-player = ポップアウトプレーヤー
+# Context: stream_pip
+voice-stream-pip-return-to-call = 通話に戻る
+# Context: stream_pip
+voice-stream-pip-screen = { $name } の画面
+# Context: stream_pip
+voice-stream-pip-stop-watching = 視聴を停止
+# Context: stream_popout
+voice-stream-popout-close = ポップアウトプレーヤーを閉じる
+# Context: stream_popout
+voice-stream-popout-connecting = ストリームに接続しています…
+# Context: stream_popout
+voice-stream-popout-open = ストリームをポップアウトウィンドウで開く
+# Context: stream_popout
+voice-stream-popout-participant = 参加者
+# Context: stream_popout
+voice-stream-popout-pin-on-top = 最前面に固定（常に手前）
+# Context: stream_popout
+voice-stream-popout-player = ポップアウトプレーヤー
+# Context: stream_popout
+voice-stream-popout-title = { $name } の画面 - ポップアウトプレーヤー
+# Context: stream_popout
+voice-stream-popout-unpin = 最前面の固定を解除
 # Context: stream_tile
 voice-stream-tile-stream-audio = ストリームオーディオ
 # Context: stream_tile

@@ -4225,6 +4225,30 @@ voice-mute-toggle-with-settings-output-settings = Ustawienia wyjściowe
 voice-stream-audio-controls-mute-stream-audio = Wycisz dźwięk strumienia
 # Context: stream_audio_controls
 voice-stream-audio-controls-stream-volume = Głośność strumienia
+# Context: stream_pip
+voice-stream-pip-popout-player = Odtwarzacz w osobnym oknie
+# Context: stream_pip
+voice-stream-pip-return-to-call = Wróć do połączenia
+# Context: stream_pip
+voice-stream-pip-screen = Ekran: { $name }
+# Context: stream_pip
+voice-stream-pip-stop-watching = Przestań oglądać
+# Context: stream_popout
+voice-stream-popout-close = Zamknij odtwarzacz w osobnym oknie
+# Context: stream_popout
+voice-stream-popout-connecting = Łączenie z transmisją…
+# Context: stream_popout
+voice-stream-popout-open = Otwórz transmisję w osobnym oknie
+# Context: stream_popout
+voice-stream-popout-participant = Uczestnik
+# Context: stream_popout
+voice-stream-popout-pin-on-top = Przypnij na wierzchu (Zawsze na wierzchu)
+# Context: stream_popout
+voice-stream-popout-player = Odtwarzacz w osobnym oknie
+# Context: stream_popout
+voice-stream-popout-title = Ekran: { $name } - odtwarzacz w osobnym oknie
+# Context: stream_popout
+voice-stream-popout-unpin = Odepnij z wierzchu
 # Context: stream_tile
 voice-stream-tile-stream-audio = Przesyłaj strumieniowo dźwięk
 # Context: stream_tile

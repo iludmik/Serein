@@ -4226,6 +4226,30 @@ voice-mute-toggle-with-settings-output-settings = Configuración de salida
 voice-stream-audio-controls-mute-stream-audio = Silenciar la transmisión de audio
 # Context: stream_audio_controls
 voice-stream-audio-controls-stream-volume = Volumen de transmisión
+# Context: stream_pip
+voice-stream-pip-popout-player = Reproductor emergente
+# Context: stream_pip
+voice-stream-pip-return-to-call = Volver a la llamada
+# Context: stream_pip
+voice-stream-pip-screen = Pantalla de { $name }
+# Context: stream_pip
+voice-stream-pip-stop-watching = Dejar de ver
+# Context: stream_popout
+voice-stream-popout-close = Cerrar el reproductor emergente
+# Context: stream_popout
+voice-stream-popout-connecting = Conectando con la transmisión…
+# Context: stream_popout
+voice-stream-popout-open = Abrir la transmisión en una ventana emergente
+# Context: stream_popout
+voice-stream-popout-participant = Participante
+# Context: stream_popout
+voice-stream-popout-pin-on-top = Fijar arriba (Siempre visible)
+# Context: stream_popout
+voice-stream-popout-player = Reproductor emergente
+# Context: stream_popout
+voice-stream-popout-title = Pantalla de { $name } - Reproductor emergente
+# Context: stream_popout
+voice-stream-popout-unpin = Desanclar de arriba
 # Context: stream_tile
 voice-stream-tile-stream-audio = Transmitir audio
 # Context: stream_tile

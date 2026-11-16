@@ -4250,6 +4250,30 @@ voice-mute-toggle-with-settings-output-settings = 출력 설정
 voice-stream-audio-controls-mute-stream-audio = 방송 오디오 음소거
 # Context: stream_audio_controls
 voice-stream-audio-controls-stream-volume = 방송 음량
+# Context: stream_pip
+voice-stream-pip-popout-player = 팝아웃 플레이어
+# Context: stream_pip
+voice-stream-pip-return-to-call = 통화로 돌아가기
+# Context: stream_pip
+voice-stream-pip-screen = { $name } 님의 화면
+# Context: stream_pip
+voice-stream-pip-stop-watching = 시청 중지
+# Context: stream_popout
+voice-stream-popout-close = 팝아웃 플레이어 닫기
+# Context: stream_popout
+voice-stream-popout-connecting = 방송에 연결하는 중…
+# Context: stream_popout
+voice-stream-popout-open = 방송을 팝아웃 창에서 열기
+# Context: stream_popout
+voice-stream-popout-participant = 참가자
+# Context: stream_popout
+voice-stream-popout-pin-on-top = 위에 고정 (항상 위)
+# Context: stream_popout
+voice-stream-popout-player = 팝아웃 플레이어
+# Context: stream_popout
+voice-stream-popout-title = { $name } 님의 화면 - 팝아웃 플레이어
+# Context: stream_popout
+voice-stream-popout-unpin = 위 고정 해제
 # Context: stream_tile
 voice-stream-tile-stream-audio = 방송 오디오
 # Context: stream_tile

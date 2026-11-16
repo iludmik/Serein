@@ -210,9 +210,11 @@ impl MessagingUi {
 			self.voice_popout_open = false;
 			return;
 		};
-		let name = participant_user(state, channel, streamer)
-			.map_or_else(|| "Participant".to_owned(), |user| user.name.clone());
-		let title = format!("{name}'s screen - Popout Player");
+		let name = participant_user(state, channel, streamer).map_or_else(
+			|| crate::i18n::translate("voice-stream-popout-participant"),
+			|user| user.name.clone(),
+		);
+		let title = crate::i18n::translate_args("voice-stream-popout-title", &[("name", &name)]);
 		let pinned = self.voice_popout_pinned;
 		let viewport_id = egui::ViewportId::from_hash_of("voice-stream-popout");
 		let mut open = self.voice_popout_open;
@@ -231,12 +233,19 @@ impl MessagingUi {
 				.with_decorations(false)
 				.with_window_level(level),
 			|ui, class| {
+				// A backend without multi-viewport support keeps the PiP fallback instead.
 				if class == egui::ViewportClass::EmbeddedWindow {
+					open = false;
 					return;
 				}
 				egui::CentralPanel::default()
 					.frame(egui::Frame::NONE.fill(egui::Color32::BLACK))
 					.show(ui, |ui| {
+						// Decorations are off, so a native close (⌘W) also closes the popout.
+						if ui.input(|input| input.viewport().close_requested()) {
+							open = false;
+							return;
+						}
 						let rect = ui.max_rect();
 						let bg_response = ui.interact(
 							rect,
@@ -261,9 +270,9 @@ impl MessagingUi {
 							None => {
 								ui.painter().rect_filled(rect, 0, STAGE_FILL);
 								let status = if self.voice_stream_status.is_empty() {
-									"Connecting to the stream…"
+									crate::i18n::translate("voice-stream-popout-connecting")
 								} else {
-									self.voice_stream_status
+									self.voice_stream_status.to_owned()
 								};
 								let spinner = egui::Rect::from_center_size(
 									rect.center() - egui::vec2(0.0, 18.0),
@@ -304,7 +313,10 @@ impl MessagingUi {
 								close_btn.rect.shrink(8.0),
 								egui::Color32::WHITE.gamma_multiply(reveal),
 							);
-							if close_btn.on_hover_text("Close popout player").clicked() {
+							if close_btn
+								.on_hover_text(crate::i18n::translate("voice-stream-popout-close"))
+								.clicked()
+							{
 								open = false;
 							}
 
@@ -325,11 +337,11 @@ impl MessagingUi {
 								pin_color.gamma_multiply(reveal),
 							);
 							if pin_btn
-								.on_hover_text(if pinned {
-									"Unpin from top"
+								.on_hover_text(crate::i18n::translate(if pinned {
+									"voice-stream-popout-unpin"
 								} else {
-									"Pin on top (Always on top)"
-								})
+									"voice-stream-popout-pin-on-top"
+								}))
 								.clicked()
 							{
 								self.voice_popout_pinned = !pinned;
@@ -342,8 +354,20 @@ impl MessagingUi {
 	}
 
 	/// Bottom-right in-app Picture-in-Picture floating tile when navigating away from the stream.
-	pub(super) fn show_stream_pip(&mut self, ctx: &egui::Context, state: &mut State) {
-		if self.voice_popout_open || self.voice_fullscreen.is_some() {
+	pub(super) fn show_stream_pip(
+		&mut self,
+		ctx: &egui::Context,
+		state: &mut State,
+		commands: &mut Vec<Command>,
+	) {
+		// The stage itself is on screen (guild voice or stage channel, full or docked beside the
+		// chat), the popout owns the stream, the native fullscreen surface does, or a modal is
+		// waiting for an answer: no copy.
+		if self.voice_popout_open
+			|| self.voice_fullscreen.is_some()
+			|| self.voice_stage_shown
+			|| ctx.memory(|memory| memory.top_modal_layer().is_some())
+		{
 			return;
 		}
 		let watching = state
@@ -355,17 +379,9 @@ impl MessagingUi {
 		let Some((channel, streamer)) = watching else {
 			return;
 		};
-		// Only show PiP when the user is NOT looking at the active voice stage.
-		// If on a different channel or in DMs without call stage, show PiP.
-		let channel_selected = state.selected == Some(channel);
-		if channel_selected {
-			let is_voice_channel = state.channel(channel).is_some_and(|c| c.kind == 2);
-			if is_voice_channel && !self.voice_chat_open {
-				return;
-			}
-			if self.dm_call_stage(state).is_some() {
-				return;
-			}
+		// A selected DM call keeps its own stage in the conversation area.
+		if self.dm_call_stage(state).is_some() {
+			return;
 		}
 
 		let screen = ctx.content_rect();
@@ -387,8 +403,10 @@ impl MessagingUi {
 					egui::StrokeKind::Inside,
 				);
 
-				let name = participant_user(state, channel, streamer)
-					.map_or_else(|| "Participant".to_owned(), |user| user.name.clone());
+				let name = participant_user(state, channel, streamer).map_or_else(
+					|| crate::i18n::translate("voice-stream-popout-participant"),
+					|user| user.name.clone(),
+				);
 
 				if let Some(texture) = &self.voice_stream_view {
 					let content = fit_rect(rect, texture.size);
@@ -402,7 +420,13 @@ impl MessagingUi {
 					ui.put(spinner, egui::Spinner::new().color(STAGE_MUTED));
 				}
 
-				name_badge(ui, rect, &format!("{name}'s screen"), None, 1.0);
+				name_badge(
+					ui,
+					rect,
+					&crate::i18n::translate_args("voice-stream-pip-screen", &[("name", &name)]),
+					None,
+					1.0,
+				);
 
 				// Quick overlay controls on hover: Return to call, Popout, Stop watching
 				let hovered = response.hovered() || ui.rect_contains_pointer(rect);
@@ -428,7 +452,10 @@ impl MessagingUi {
 						stop.rect.shrink(7.0),
 						egui::Color32::WHITE,
 					);
-					if stop.on_hover_text("Stop watching").clicked() {
+					if stop
+						.on_hover_text(crate::i18n::translate("voice-stream-pip-stop-watching"))
+						.clicked()
+					{
 						self.watch_request = Some(None);
 					}
 
@@ -443,7 +470,10 @@ impl MessagingUi {
 						popout.rect.shrink(7.0),
 						egui::Color32::WHITE,
 					);
-					if popout.on_hover_text("Popout player").clicked() {
+					if popout
+						.on_hover_text(crate::i18n::translate("voice-stream-pip-popout-player"))
+						.clicked()
+					{
 						self.voice_popout_open = true;
 					}
 
@@ -458,15 +488,28 @@ impl MessagingUi {
 						expand.rect.shrink(7.0),
 						egui::Color32::WHITE,
 					);
-					if expand.on_hover_text("Return to call").clicked() {
-						if let Some(cmd) = state.select(channel) {
-							// Return to call
-							let _ = cmd;
-						}
-						self.voice_focus = Some(StageFocus::Stream(streamer));
+					if expand
+						.on_hover_text(crate::i18n::translate("voice-stream-pip-return-to-call"))
+						.clicked()
+					{
+						self.return_to_stream(state, channel, streamer, commands);
 					}
 				}
 			});
+	}
+
+	/// Return to the call whose stream the PiP shows and dispatch the channel switch with it.
+	fn return_to_stream(
+		&mut self,
+		state: &mut State,
+		channel: Id,
+		streamer: Id,
+		commands: &mut Vec<Command>,
+	) {
+		if let Some(command) = state.select(channel) {
+			commands.push(command);
+		}
+		self.voice_focus = Some(StageFocus::Stream(streamer));
 	}
 
 	pub fn voice_stream_volume(&self) -> u16 {
@@ -1411,6 +1454,7 @@ impl MessagingUi {
 		channel: Id,
 		commands: &mut Vec<Command>,
 	) {
+		self.voice_stage_shown = true;
 		let connected = state
 			.voice
 			.active
@@ -3796,15 +3840,10 @@ impl MessagingUi {
 		// share/more) before anything overlaps; mute, camera and hang-up always stay.
 		let actions = 2.0 * 48.0;
 		let essential = 2.0 * 48.0 + BAR_GAP + HANG_UP;
-		let side = [
-			watched.is_some(),
-			watched.is_some(),
-			focused,
-			screen_focused,
-		]
-		.iter()
-		.filter(|shown| **shown)
-		.count() as f32
+		// A watched stream shows the volume control and the popout button, then one per mode.
+		let side = (usize::from(watched.is_some()) * 2
+			+ usize::from(focused)
+			+ usize::from(screen_focused)) as f32
 			* 44.0;
 		let side_shown = bar.width() - 2.0 * STAGE_MARGIN >= essential + BAR_GAP + side;
 		let side = if side_shown { side } else { 0.0 };
@@ -4047,8 +4086,8 @@ impl MessagingUi {
 				40.0,
 				true,
 				STAGE_TEXT,
-				"Popout player",
-				"Open stream in a popout window",
+				"voice-stream-popout-player",
+				"voice-stream-popout-open",
 			);
 			if popout.clicked() {
 				self.voice_popout_open = true;
@@ -7364,5 +7403,70 @@ mod tests {
 		output.drop_without_applying_deltas();
 		assert_eq!(badge_width, expected_width);
 		crate::i18n::set_current(prev_lang);
+	}
+
+	#[test]
+	fn stream_pip_stays_hidden_while_the_call_stage_is_on_screen() {
+		for stage_shown in [true, false] {
+			let mut state = test_support::voice_demo_state();
+			// Another conversation is open, so only the stage flag decides.
+			state.selected = Some(Id(20));
+			state.voice.active.as_mut().unwrap().watching = Some(Id(3));
+			let mut messaging = MessagingUi {
+				voice_stage_shown: stage_shown,
+				..Default::default()
+			};
+			let ctx = egui::Context::default();
+			let mut commands = Vec::new();
+			let output = ctx.run_ui(
+				egui::RawInput {
+					screen_rect: Some(egui::Rect::from_min_size(
+						egui::Pos2::ZERO,
+						egui::vec2(640.0, 420.0),
+					)),
+					..Default::default()
+				},
+				|ui| messaging.show_stream_pip(ui.ctx(), &mut state, &mut commands),
+			);
+			// The PiP is the only widget in this pass, so its shapes are the whole output.
+			assert_eq!(
+				!output.shapes.is_empty(),
+				!stage_shown,
+				"stage_on_screen={stage_shown}"
+			);
+			output.drop_without_applying_deltas();
+		}
+	}
+
+	#[test]
+	fn a_popout_without_multi_viewport_support_falls_back_to_the_pip() {
+		let mut state = test_support::voice_demo_state();
+		state.voice.active.as_mut().unwrap().watching = Some(Id(3));
+		let mut messaging = MessagingUi {
+			voice_popout_open: true,
+			..Default::default()
+		};
+		let ctx = egui::Context::default();
+		messaging.show_stream_popout(&ctx, &mut state);
+		assert!(
+			!messaging.voice_popout_open,
+			"an embedded-only backend closes the popout so the PiP can take over"
+		);
+	}
+
+	#[test]
+	fn returning_to_the_call_dispatches_the_channel_switch() {
+		let mut state = test_support::demo_state();
+		state.selected = Some(Id(20));
+		let mut messaging = MessagingUi::default();
+		let mut commands = Vec::new();
+		messaging.return_to_stream(&mut state, Id(22), Id(3), &mut commands);
+		assert_eq!(state.selected, Some(Id(22)));
+		assert!(
+			matches!(commands.as_slice(), [Command::History { .. }]),
+			"opening the call channel must dispatch its history request: {} command(s)",
+			commands.len()
+		);
+		assert_eq!(messaging.voice_focus, Some(StageFocus::Stream(Id(3))));
 	}
 }

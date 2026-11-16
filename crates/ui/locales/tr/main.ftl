@@ -4216,6 +4216,30 @@ voice-mute-toggle-with-settings-output-settings = Çıkış ayarları
 voice-stream-audio-controls-mute-stream-audio = Akış sesini kapat
 # Context: stream_audio_controls
 voice-stream-audio-controls-stream-volume = Yayın ses düzeyi
+# Context: stream_pip
+voice-stream-pip-popout-player = Ayrı oynatıcı
+# Context: stream_pip
+voice-stream-pip-return-to-call = Aramaya dön
+# Context: stream_pip
+voice-stream-pip-screen = { $name } kişisinin ekranı
+# Context: stream_pip
+voice-stream-pip-stop-watching = İzlemeyi durdur
+# Context: stream_popout
+voice-stream-popout-close = Ayrı oynatıcıyı kapat
+# Context: stream_popout
+voice-stream-popout-connecting = Yayına bağlanılıyor…
+# Context: stream_popout
+voice-stream-popout-open = Yayını ayrı bir pencerede aç
+# Context: stream_popout
+voice-stream-popout-participant = Katılımcı
+# Context: stream_popout
+voice-stream-popout-pin-on-top = Üstte tut (Her zaman üstte)
+# Context: stream_popout
+voice-stream-popout-player = Ayrı oynatıcı
+# Context: stream_popout
+voice-stream-popout-title = { $name } kişisinin ekranı - Ayrı oynatıcı
+# Context: stream_popout
+voice-stream-popout-unpin = Üstte tutmayı bırak
 # Context: stream_tile
 voice-stream-tile-stream-audio = Ses akışı
 # Context: stream_tile

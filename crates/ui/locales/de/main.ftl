@@ -4226,6 +4226,30 @@ voice-mute-toggle-with-settings-output-settings = Ausgabeeinstellungen
 voice-stream-audio-controls-mute-stream-audio = Stream-Audio stumm schalten
 # Context: stream_audio_controls
 voice-stream-audio-controls-stream-volume = Stream-Lautstärke
+# Context: stream_pip
+voice-stream-pip-popout-player = Popout-Player
+# Context: stream_pip
+voice-stream-pip-return-to-call = Zurück zum Anruf
+# Context: stream_pip
+voice-stream-pip-screen = Bildschirm von { $name }
+# Context: stream_pip
+voice-stream-pip-stop-watching = Nicht mehr zuschauen
+# Context: stream_popout
+voice-stream-popout-close = Popout-Player schließen
+# Context: stream_popout
+voice-stream-popout-connecting = Verbindung zum Stream wird hergestellt…
+# Context: stream_popout
+voice-stream-popout-open = Stream in einem Popout-Fenster öffnen
+# Context: stream_popout
+voice-stream-popout-participant = Teilnehmer
+# Context: stream_popout
+voice-stream-popout-pin-on-top = Oben anheften (Immer im Vordergrund)
+# Context: stream_popout
+voice-stream-popout-player = Popout-Player
+# Context: stream_popout
+voice-stream-popout-title = Bildschirm von { $name } - Popout-Player
+# Context: stream_popout
+voice-stream-popout-unpin = Nicht mehr oben anheften
 # Context: stream_tile
 voice-stream-tile-stream-audio = Audio streamen
 # Context: stream_tile

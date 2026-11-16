@@ -4230,6 +4230,30 @@ voice-mute-toggle-with-settings-output-settings = Paramètres de sortie
 voice-stream-audio-controls-mute-stream-audio = Couper le son du flux
 # Context: stream_audio_controls
 voice-stream-audio-controls-stream-volume = Volume du flux
+# Context: stream_pip
+voice-stream-pip-popout-player = Lecteur détaché
+# Context: stream_pip
+voice-stream-pip-return-to-call = Revenir à l'appel
+# Context: stream_pip
+voice-stream-pip-screen = Écran de { $name }
+# Context: stream_pip
+voice-stream-pip-stop-watching = Arrêter de regarder
+# Context: stream_popout
+voice-stream-popout-close = Fermer le lecteur détaché
+# Context: stream_popout
+voice-stream-popout-connecting = Connexion au flux…
+# Context: stream_popout
+voice-stream-popout-open = Ouvrir le flux dans une fenêtre détachée
+# Context: stream_popout
+voice-stream-popout-participant = Participant
+# Context: stream_popout
+voice-stream-popout-pin-on-top = Épingler au-dessus (Toujours au premier plan)
+# Context: stream_popout
+voice-stream-popout-player = Lecteur détaché
+# Context: stream_popout
+voice-stream-popout-title = Écran de { $name } - Lecteur détaché
+# Context: stream_popout
+voice-stream-popout-unpin = Détacher du dessus
 # Context: stream_tile
 voice-stream-tile-stream-audio = Flux audio
 # Context: stream_tile

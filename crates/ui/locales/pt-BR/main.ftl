@@ -4226,6 +4226,30 @@ voice-mute-toggle-with-settings-output-settings = Configurações de saída
 voice-stream-audio-controls-mute-stream-audio = Silenciar transmissão de áudio
 # Context: stream_audio_controls
 voice-stream-audio-controls-stream-volume = Volume de transmissão
+# Context: stream_pip
+voice-stream-pip-popout-player = Reprodutor em janela separada
+# Context: stream_pip
+voice-stream-pip-return-to-call = Voltar para a chamada
+# Context: stream_pip
+voice-stream-pip-screen = Tela de { $name }
+# Context: stream_pip
+voice-stream-pip-stop-watching = Parar de assistir
+# Context: stream_popout
+voice-stream-popout-close = Fechar o reprodutor em janela separada
+# Context: stream_popout
+voice-stream-popout-connecting = Conectando à transmissão…
+# Context: stream_popout
+voice-stream-popout-open = Abrir a transmissão em uma janela separada
+# Context: stream_popout
+voice-stream-popout-participant = Participante
+# Context: stream_popout
+voice-stream-popout-pin-on-top = Fixar no topo (Sempre visível)
+# Context: stream_popout
+voice-stream-popout-player = Reprodutor em janela separada
+# Context: stream_popout
+voice-stream-popout-title = Tela de { $name } - Reprodutor em janela separada
+# Context: stream_popout
+voice-stream-popout-unpin = Desafixar do topo
 # Context: stream_tile
 voice-stream-tile-stream-audio = Transmitir áudio
 # Context: stream_tile

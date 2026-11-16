@@ -4303,6 +4303,30 @@ voice-mute-toggle-with-settings-output-settings = Output settings
 voice-stream-audio-controls-mute-stream-audio = Mute stream audio
 # Context: stream_audio_controls
 voice-stream-audio-controls-stream-volume = Stream volume
+# Context: stream_pip
+voice-stream-pip-popout-player = Popout player
+# Context: stream_pip
+voice-stream-pip-return-to-call = Return to call
+# Context: stream_pip
+voice-stream-pip-screen = { $name }'s screen
+# Context: stream_pip
+voice-stream-pip-stop-watching = Stop watching
+# Context: stream_popout
+voice-stream-popout-close = Close popout player
+# Context: stream_popout
+voice-stream-popout-connecting = Connecting to the stream…
+# Context: stream_popout
+voice-stream-popout-open = Open stream in a popout window
+# Context: stream_popout
+voice-stream-popout-participant = Participant
+# Context: stream_popout
+voice-stream-popout-pin-on-top = Pin on top (Always on top)
+# Context: stream_popout
+voice-stream-popout-player = Popout player
+# Context: stream_popout
+voice-stream-popout-title = { $name }'s screen - Popout Player
+# Context: stream_popout
+voice-stream-popout-unpin = Unpin from top
 # Context: stream_tile
 voice-stream-tile-stream-audio = Stream audio
 # Context: stream_tile

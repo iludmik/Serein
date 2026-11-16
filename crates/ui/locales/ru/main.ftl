@@ -4232,6 +4232,30 @@ voice-mute-toggle-with-settings-output-settings = Настройки вывод�
 voice-stream-audio-controls-mute-stream-audio = Отключить звук потока
 # Context: stream_audio_controls
 voice-stream-audio-controls-stream-volume = Громкость стрима
+# Context: stream_pip
+voice-stream-pip-popout-player = Отдельный проигрыватель
+# Context: stream_pip
+voice-stream-pip-return-to-call = Вернуться к звонку
+# Context: stream_pip
+voice-stream-pip-screen = Экран { $name }
+# Context: stream_pip
+voice-stream-pip-stop-watching = Прекратить просмотр
+# Context: stream_popout
+voice-stream-popout-close = Закрыть отдельный проигрыватель
+# Context: stream_popout
+voice-stream-popout-connecting = Подключение к трансляции…
+# Context: stream_popout
+voice-stream-popout-open = Открыть трансляцию в отдельном окне
+# Context: stream_popout
+voice-stream-popout-participant = Участник
+# Context: stream_popout
+voice-stream-popout-pin-on-top = Закрепить сверху (Поверх остальных окон)
+# Context: stream_popout
+voice-stream-popout-player = Отдельный проигрыватель
+# Context: stream_popout
+voice-stream-popout-title = Экран { $name } — отдельный проигрыватель
+# Context: stream_popout
+voice-stream-popout-unpin = Открепить сверху
 # Context: stream_tile
 voice-stream-tile-stream-audio = Потоковое аудио
 # Context: stream_tile

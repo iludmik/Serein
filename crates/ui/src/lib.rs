@@ -553,6 +553,8 @@ pub struct MessagingUi {
 	voice_chrome_hidden: f32,
 	/// Session-only visibility of the selected guild voice channel's chat.
 	pub voice_chat_open: bool,
+	/// Set when this frame drew the call stage; the stream PiP stays hidden while it is on screen.
+	voice_stage_shown: bool,
 	/// Tile click to start (`Some(user)`) or stop (`None`) watching, applied by the stage.
 	watch_request: Option<Option<Id>>,
 	ring_request: Option<(Id, u64, Id, bool)>,
@@ -4968,6 +4970,7 @@ impl MessagingUi {
 	/// Draws one frame of the signed-in client and returns the commands it produced for the
 	/// service layer.
 	pub fn show(&mut self, ui: &mut egui::Ui, state: &mut State) -> Vec<Command> {
+		self.voice_stage_shown = false;
 		interface_tweaks::publish(ui.ctx(), &self.interface_tweaks);
 		rtl::scope(
 			ui.ctx(),
@@ -6512,7 +6515,7 @@ impl MessagingUi {
 			state.toggle_gif_favorite(&gif);
 		}
 		self.show_stream_popout(&ctx, state);
-		self.show_stream_pip(&ctx, state);
+		self.show_stream_pip(&ctx, state, &mut commands);
 		commands
 	}
 }
