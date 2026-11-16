@@ -984,10 +984,18 @@ impl MessagingUi {
 									),
 								);
 								self.preload.conversation(&response, || Some(channel.id));
+								// Double-click guard: a single click only opens the channel, so a
+								// misclick cannot start or switch a call.
+								if crate::voice::vc_double_click_enabled() {
+									response.clone().on_hover_text("Double-click to join voice");
+								}
 								if response.clicked() {
 									selected = Some(channel.id);
 								}
-								if response.double_clicked() {
+								if response.double_clicked()
+									|| (!crate::voice::vc_double_click_enabled()
+										&& response.clicked())
+								{
 									self.voice_join = Some(channel.id);
 								}
 								paint_shelf_rule(
