@@ -29,6 +29,7 @@ pub mod polls;
 pub mod preload;
 pub mod presence;
 pub mod profile;
+pub mod radar;
 pub mod reactions;
 pub mod read_state;
 mod replies;
@@ -855,6 +856,8 @@ pub struct State {
 	pub invite_join: invites::Join,
 	pub guild_creation: guild_creation::Creation,
 	pub voice: voice::State,
+	/// Watched-user activity recording; persistence is handled by the desktop worker.
+	pub radar: radar::Radar,
 	pub soundboard: soundboard::Soundboard,
 	pub generation: u64,
 	pub auth: auth::AuthState,
@@ -1051,6 +1054,7 @@ impl Default for State {
 			folders_error: None,
 			folders_stale: false,
 			user_actions: user_actions::Actions::default(),
+			radar: Default::default(),
 			server_actions: server_actions::Actions::default(),
 			channel_list: channel_list::ChannelList::default(),
 			channel_actions: channel_actions::Actions::default(),
@@ -2778,6 +2782,7 @@ impl State {
 			self.interrupt_own_profile();
 		}
 		if let Event::Typing(signal) = &envelope.event {
+			self.radar.observe_typing(signal.user, radar::unix_ms());
 			self.observe_typing_at(
 				*signal,
 				std::time::SystemTime::now(),
@@ -3944,6 +3949,25 @@ impl State {
 					Ok(())
 				};
 				self.observe_notification(&m);
+				if self.radar.watch.is_watched(m.author.id) && !m.content.is_empty() {
+					let place = self
+						.channel_index(m.channel)
+						.and_then(|index| self.channels.get(index))
+						.map(|c| c.name.clone());
+					let guild = self
+						.channel_index(m.channel)
+						.and_then(|index| self.channels.get(index))
+						.and_then(|c| c.guild);
+					self.radar.observe_message(
+						m.author.id,
+						m.channel,
+						guild,
+						place.as_deref(),
+						&m.content,
+						Some(m.id),
+						radar::unix_ms(),
+					);
+				}
 				self.observe_last_message(m.channel, m.id);
 				if self.selected == Some(m.channel)
 					&& self.reactions.invalidated(m.id)
@@ -3973,6 +3997,35 @@ impl State {
 				}
 			}
 			Event::Patch(mut p) => {
+				// Radar edit capture: patches carry no author, so attribution needs the
+				// loaded row (the open conversation).
+				if !matches!(p.content, Patch::Absent)
+					&& let Some(previous) = self
+						.timeline
+						.get(p.id)
+						.map(|old| (old.author.id, old.content.clone()))
+					&& self.radar.watch.is_watched(previous.0)
+					&& let Patch::Value(content) = &p.content
+				{
+					let place = self
+						.channel_index(p.channel)
+						.and_then(|index| self.channels.get(index))
+						.map(|c| c.name.clone());
+					let guild = self
+						.channel_index(p.channel)
+						.and_then(|index| self.channels.get(index))
+						.and_then(|c| c.guild);
+					self.radar.observe_edit(
+						previous.0,
+						p.channel,
+						guild,
+						place.as_deref(),
+						&previous.1,
+						content,
+						Some(p.id),
+						radar::unix_ms(),
+					);
+				}
 				if !matches!(p.content, Patch::Absent)
 					&& self.timeline.get(p.id).is_some_and(
 						|old| !matches!(p.edited, Patch::Value(at) if old.edited_at.is_some_and(|old| at < old)),
@@ -4002,6 +4055,33 @@ impl State {
 				}
 			}
 			Event::Delete { channel, id } => {
+				// Radar delete capture runs before the row drops; only loaded messages
+				// (the open conversation) can be attributed and recovered.
+				let captured = self
+					.timeline
+					.get(id)
+					.map(|old| (old.author.id, old.content.clone()));
+				if let Some((author, content)) = captured
+					&& self.radar.watch.is_watched(author)
+				{
+					let place = self
+						.channel_index(channel)
+						.and_then(|index| self.channels.get(index))
+						.map(|c| c.name.clone());
+					let guild = self
+						.channel_index(channel)
+						.and_then(|index| self.channels.get(index))
+						.and_then(|c| c.guild);
+					self.radar.observe_delete(
+						author,
+						channel,
+						guild,
+						place.as_deref(),
+						Some(&content),
+						Some(id),
+						radar::unix_ms(),
+					);
+				}
 				self.parked_replies.forget_targets(channel, &[id]);
 				self.read_state.activity.delete(channel, id);
 				self.forget_pending_replies(channel, &[id]);
@@ -4045,6 +4125,35 @@ impl State {
 				Ok(())
 			}
 			Event::DeleteBulk { channel, ids } => {
+				let captured: Vec<(Id, Id, String)> = ids
+					.iter()
+					.filter_map(|id| {
+						self.timeline
+							.get(*id)
+							.map(|old| (old.author.id, *id, old.content.clone()))
+					})
+					.collect();
+				for (author, id, content) in captured {
+					if self.radar.watch.is_watched(author) {
+						let place = self
+							.channel_index(channel)
+							.and_then(|index| self.channels.get(index))
+							.map(|c| c.name.clone());
+						let guild = self
+							.channel_index(channel)
+							.and_then(|index| self.channels.get(index))
+							.and_then(|c| c.guild);
+						self.radar.observe_delete(
+							author,
+							channel,
+							guild,
+							place.as_deref(),
+							Some(&content),
+							Some(id),
+							radar::unix_ms(),
+						);
+					}
+				}
 				self.parked_replies.forget_targets(channel, &ids);
 				self.thread_previews.forget(channel, &ids);
 				if ids.len() <= 100 {

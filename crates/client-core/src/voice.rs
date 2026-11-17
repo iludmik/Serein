@@ -1094,6 +1094,20 @@ impl ClientState {
 					video,
 					streaming,
 				};
+				if self.radar.watch.is_watched(user) {
+					let place = channel.and_then(|channel| {
+						self.channel_index(channel)
+							.and_then(|index| self.channels.get(index))
+							.map(|c| c.name.clone())
+					});
+					self.radar.observe_voice(
+						user,
+						guild,
+						channel,
+						place.as_deref(),
+						crate::radar::unix_ms(),
+					);
+				}
 				if let Some(guild) = guild {
 					let previous = self
 						.voice

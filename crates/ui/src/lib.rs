@@ -85,6 +85,7 @@ mod pending;
 mod post_menu;
 mod preload;
 mod profiles;
+mod radar;
 mod rtl;
 mod slash_builtin;
 mod slash_commands;
@@ -310,6 +311,7 @@ pub struct MessagingUi {
 	pub extensions: ExtensionUi,
 	friends: friends::Friends,
 	inbox_open: bool,
+	radar: radar::RadarUi,
 	account_menu: account_menu::AccountMenu,
 	pub own_presence: model::OwnPresence,
 	/// When the custom status clears itself, in milliseconds since the Unix epoch. The
@@ -3100,6 +3102,16 @@ impl MessagingUi {
 					}
 					self.pins_anchor =
 						(self.search.open && self.search.pins()).then_some(pins.rect);
+					let radar = icons::toggle(
+						ui,
+						icons::Icon::Eye,
+						32.0,
+						self.radar.open,
+						&language.text("radar-title"),
+					);
+					if radar.clicked() {
+						self.radar.open = !self.radar.open;
+					}
 					if let Some(c) = channel
 						.as_ref()
 						.filter(|c| c.guild.is_some() && matches!(c.kind, 0 | 5 | 15 | 16))
@@ -6498,6 +6510,7 @@ impl MessagingUi {
 		select::show_menu(&ctx);
 		self.show_call_switch(&ctx, state, &mut commands);
 		self.mentions_inbox(&ctx, state, &mut commands);
+		self.radar(&ctx, state, &mut commands);
 		self.apply_ring_request(state, &mut commands);
 		if let Some((guild, channel, user, change)) = self.voice_moderation.take()
 			&& let Some(command) = state.request_server_admin(

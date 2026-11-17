@@ -248,6 +248,24 @@ impl State {
 			{
 				continue;
 			}
+			if self.radar.watch.is_watched(update.user) {
+				let previous = self
+					.direct_presences
+					.iter()
+					.find(|presence| presence.user == update.user)
+					.cloned();
+				let resolved = update.resolve(previous.as_ref());
+				let now_ms = crate::radar::unix_ms();
+				self.radar.observe_presence(
+					update.user,
+					resolved.status.as_deref(),
+					resolved.custom_status.as_deref(),
+					resolved.clients,
+					now_ms,
+				);
+				self.radar
+					.observe_activity(update.user, &resolved.activities, now_ms);
+			}
 			match &update.avatar {
 				Patch::Absent => {}
 				Patch::Null => {
