@@ -34,6 +34,31 @@ pub fn player_navigation(value: &str) -> bool {
 	})
 }
 
+/// Stops the embedded player's page from going native fullscreen: YouTube's own fullscreen
+/// button would cover the whole client surface in black (and Esc was the only way back).
+/// Serein's inline and mini players stay the only presentations of a provider video.
+const FULLSCREEN_BLOCK: &str = r#"(() => {
+	const deny = () => Promise.reject(new TypeError("Fullscreen is disabled in Serein"));
+	for (const proto of [Element.prototype, Document.prototype]) {
+		for (const name of ["requestFullscreen", "webkitRequestFullscreen", "webkitRequestFullScreen"]) {
+			if (name in proto) {
+				try { proto[name] = deny; } catch (error) {}
+			}
+		}
+	}
+	const media = window.HTMLMediaElement && HTMLMediaElement.prototype;
+	if (media && "webkitEnterFullscreen" in media) {
+		try { media.webkitEnterFullscreen = () => {}; } catch (error) {}
+	}
+	for (const target of [document, Document.prototype]) {
+		for (const name of ["fullscreenEnabled", "webkitFullscreenEnabled"]) {
+			try {
+				Object.defineProperty(target, name, { get: () => false, configurable: true });
+			} catch (error) {}
+		}
+	}
+})();"#;
+
 #[cfg(not(target_os = "linux"))]
 pub struct WebPlayer {
 	view: wry::WebView,
@@ -60,6 +85,7 @@ impl WebPlayer {
 		);
 		let builder = wry::WebViewBuilder::new()
 			.with_url_and_headers(url, headers)
+			.with_initialization_script_for_main_only(FULLSCREEN_BLOCK, false)
 			.with_visible(false)
 			.with_incognito(true)
 			.with_devtools(false)
