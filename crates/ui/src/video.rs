@@ -54,8 +54,6 @@ pub enum WebMode {
 	/// Playing in the embed box inside the conversation.
 	#[default]
 	Inline,
-	/// The centered theater over the whole client surface.
-	Theater,
 	/// The floating corner player that leaves the conversation usable.
 	Mini,
 }
@@ -108,10 +106,8 @@ pub struct VideoUi {
 	pub(super) fullscreen_request: Option<bool>,
 	/// The open provider player; the desktop places its webview over `web_bounds`.
 	pub web: Option<WebVideo>,
-	/// How the open player is presented; embed, theater, or floating mini player.
+	/// How the open player is presented; embed or floating mini player.
 	pub web_mode: WebMode,
-	/// The mode a theater close returns to.
-	web_prev_mode: WebMode,
 	/// Selection, source channel/message and media fingerprint; edits revoke the prior Play.
 	web_source: Option<(Option<Id>, Id, Id, egui::Id)>,
 	pub web_bounds: Option<egui::Rect>,
@@ -149,7 +145,6 @@ impl Default for VideoUi {
 			fullscreen_request: None,
 			web: None,
 			web_mode: WebMode::default(),
-			web_prev_mode: WebMode::default(),
 			web_source: None,
 			web_bounds: None,
 			web_mini_size: None,
@@ -172,7 +167,6 @@ impl VideoUi {
 		self.seen = false;
 		self.command = Some(VideoCommand::Stop);
 		self.web_mode = WebMode::default();
-		self.web_prev_mode = WebMode::default();
 		self.web_bounds = None;
 	}
 	pub(super) fn exit_fullscreen(&mut self) {
@@ -1010,13 +1004,13 @@ impl VideoUi {
 			}
 			if crate::attachments::glass_button(
 				&mut controls,
-				crate::icons::Icon::Fullscreen,
+				crate::icons::Icon::ChevronDown,
 				24.0,
-				"Theater view",
+				"Mini player",
 			)
 			.clicked()
 			{
-				self.web_mode = WebMode::Theater;
+				self.web_mode = WebMode::Mini;
 			}
 			controls.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
 				ui.add(
@@ -1151,7 +1145,7 @@ impl VideoUi {
 				})
 			})
 	}
-	/// Theater overlay for the provider player. The desktop places the webview over the
+	/// The provider player presentation. The desktop places the webview over the
 	/// Stage reserved here, so nothing else may paint above it while it is open.
 	pub(super) fn show_web_player(
 		&mut self,
@@ -1176,135 +1170,6 @@ impl VideoUi {
 				self.web_bounds = None;
 			}
 			WebMode::Mini => self.show_mini_player(ctx, &video, composer, opening),
-			WebMode::Theater => self.show_theater(ctx, &video, opening),
-		}
-	}
-
-	/// The centered theater over the whole client surface; closing keeps playback and
-	/// shrinks to the mini player.
-	fn show_theater(
-		&mut self,
-		ctx: &egui::Context,
-		video: &WebVideo,
-		opening: &mut Option<String>,
-	) {
-		let screen = ctx.content_rect();
-		let id = egui::Id::unique("provider-video-player");
-		let mut stop = false;
-		let mut mini = false;
-		let modal = egui::Modal::new(id)
-			.area(
-				egui::Modal::default_area(id)
-					.anchor(egui::Align2::LEFT_TOP, egui::Vec2::ZERO)
-					.fade_in(false),
-			)
-			.backdrop_color(egui::Color32::from_black_alpha(220))
-			.frame(egui::Frame::NONE)
-			.show(ctx, |ui| {
-				ui.set_min_size(screen.size());
-				ui.set_max_size(screen.size());
-				let header = 44.0;
-				let available =
-					(screen.size() - egui::vec2(96.0, 96.0 + header)).max(egui::vec2(160.0, 90.0));
-				let aspect = if video.width > 0 && video.height > 0 {
-					(video.width as f32 / video.height as f32).clamp(0.5, 2.4)
-				} else {
-					16.0 / 9.0
-				};
-				let width = available.x.min(available.y * aspect).min(1600.0);
-				let size = egui::vec2(width, width / aspect);
-				let stage = egui::Rect::from_center_size(
-					screen.center() + egui::vec2(0.0, header / 2.0),
-					size,
-				);
-				let bar = egui::Rect::from_min_max(
-					egui::pos2(stage.left(), stage.top() - header),
-					egui::pos2(stage.right(), stage.top() - 8.0),
-				);
-				// This modal fills the viewport, so egui has no outside backdrop to click.
-				let backdrop = ui.interact(screen, id.with("backdrop"), egui::Sense::click());
-				if backdrop.clicked()
-					&& backdrop
-						.interact_pointer_pos()
-						.is_some_and(|pos| !stage.union(bar).contains(pos))
-				{
-					mini = true;
-				}
-				ui.scope_builder(
-					egui::UiBuilder::new()
-						.max_rect(bar)
-						.layout(egui::Layout::right_to_left(egui::Align::Center)),
-					|ui| {
-						ui.spacing_mut().item_spacing.x = 8.0;
-						if crate::attachments::glass_button(
-							ui,
-							crate::icons::Icon::Close,
-							32.0,
-							"Close player (Esc)",
-						)
-						.clicked()
-						{
-							stop = true;
-						}
-						if crate::attachments::glass_button(
-							ui,
-							crate::icons::Icon::ChevronDown,
-							32.0,
-							"Mini player",
-						)
-						.clicked()
-						{
-							mini = true;
-						}
-						if let Some(page) = &video.page
-							&& crate::attachments::glass_button(
-								ui,
-								crate::icons::Icon::External,
-								32.0,
-								"Open in browser…",
-							)
-							.clicked()
-						{
-							*opening = Some(page.clone());
-							stop = true;
-						}
-						ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-							ui.add(
-								egui::Label::new(
-									egui::RichText::new(if video.title.is_empty() {
-										&video.provider
-									} else {
-										&video.title
-									})
-									.strong()
-									.color(egui::Color32::WHITE),
-								)
-								.truncate(),
-							);
-						});
-					},
-				);
-				ui.painter()
-					.rect_filled(stage, CORNER, egui::Color32::BLACK);
-				if let Some(notice) = self.web_notice {
-					ui.painter().text(
-						stage.center(),
-						egui::Align2::CENTER_CENTER,
-						notice,
-						egui::FontId::proportional(14.0),
-						egui::Color32::from_white_alpha(220),
-					);
-				}
-				stage
-			});
-		if stop {
-			self.web_stop();
-		} else if mini || modal.should_close() {
-			// Leaving the theater keeps playing in the corner instead of stopping.
-			self.web_mode = WebMode::Mini;
-			self.web_bounds = None;
-		} else {
-			self.web_bounds = Some(modal.inner);
 		}
 	}
 
@@ -1398,16 +1263,6 @@ impl VideoUi {
 				.clicked()
 				{
 					self.web_stop();
-				}
-				if crate::attachments::glass_button(
-					&mut header,
-					crate::icons::Icon::Fullscreen,
-					24.0,
-					"Theater view",
-				)
-				.clicked()
-				{
-					self.web_mode = WebMode::Theater;
 				}
 				if let Some(page) = &video.page
 					&& crate::attachments::glass_button(
@@ -1816,45 +1671,7 @@ mod tests {
 		}
 	}
 	#[test]
-	fn provider_backdrop_shrinks_to_the_mini_player_without_opening_a_link() {
-		let message = provider_message(Id(2));
-		let mut video = VideoUi::default();
-		video.web = crate::embeds::provider_video(&message.embeds[0]);
-		video.web_mode = crate::video::WebMode::Theater;
-		let ctx = egui::Context::default();
-		let mut opening = None;
-		for pressed in [None, None, Some(true), Some(false)] {
-			let pos = egui::pos2(10.0, 10.0);
-			let events = pressed.map_or_else(Vec::new, |pressed| {
-				vec![
-					egui::Event::PointerMoved(pos),
-					egui::Event::PointerButton {
-						pos,
-						button: egui::PointerButton::Primary,
-						pressed,
-						modifiers: egui::Modifiers::NONE,
-					},
-				]
-			});
-			ctx.run_ui(
-				egui::RawInput {
-					screen_rect: Some(egui::Rect::from_min_size(
-						egui::Pos2::ZERO,
-						egui::vec2(800.0, 600.0),
-					)),
-					events,
-					..Default::default()
-				},
-				|ui| video.show_web_player(ui.ctx(), &mut opening, None),
-			)
-			.drop_without_applying_deltas();
-		}
-		assert!(video.web.is_some() && video.web_mode == WebMode::Mini);
-		assert!(video.web_bounds.is_none());
-		assert!(opening.is_none());
-	}
-	#[test]
-	fn provider_theater_owns_the_surface_and_revalidates_its_source() {
+	fn provider_web_player_survives_only_while_its_source_is_available() {
 		let mut state = test_support::demo_state();
 		let selected = state.selected;
 		let channel = selected.unwrap();
@@ -1872,9 +1689,10 @@ mod tests {
 		let mut frame = |state: &client_core::State, available: bool| {
 			view.video.web = Some(web.clone());
 			view.video.web_source = Some(source);
-			view.video.web_mode = crate::video::WebMode::Theater;
+			view.video.web_mode = crate::video::WebMode::Mini;
 			ctx.run_ui(egui::RawInput::default(), |ui| {
-				assert_eq!(view.show_fullscreen_video(ui.ctx(), state, true), available);
+				// The inline and mini presentations never own the client surface.
+				assert!(!view.show_fullscreen_video(ui.ctx(), state, true));
 			})
 			.drop_without_applying_deltas();
 			assert_eq!(view.video.web.is_some(), available);
