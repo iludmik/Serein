@@ -547,6 +547,10 @@ pub struct MessagingUi {
 	pub voice_popout_open: bool,
 	/// Popout stream window pinned (always on top).
 	pub voice_popout_pinned: bool,
+	/// The popout opened because Serein lost focus, so regaining it closes the popout again.
+	voice_popout_auto: bool,
+	/// Last main-window focus seen by the automatic popout; `None` before the first frame.
+	voice_focus_seen: Option<bool>,
 	/// Whether the other participants stay visible as a strip under the enlarged tile.
 	pub voice_focus_participants: bool,
 	/// How far the call stage's hover chrome (and tile name badges) has faded out: 0 shown.

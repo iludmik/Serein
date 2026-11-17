@@ -23,7 +23,6 @@ static CALL_TIMER_ENABLED: AtomicBool = AtomicBool::new(true);
 pub fn set_call_timer_enabled(enable: bool) {
 	CALL_TIMER_ENABLED.store(enable, Ordering::Relaxed);
 }
-
 /// Whether the call timer is currently enabled.
 #[allow(dead_code)]
 pub fn call_timer_enabled() -> bool {
@@ -47,6 +46,10 @@ pub fn vc_double_click_enabled() -> bool {
 
 /// Local mutes share the 64 per-user volume slots sent to the mixer.
 const MAX_USER_MUTES: usize = 64;
+
+/// Borderless stream player size and its margin from the monitor's bottom-right corner.
+const POPOUT_SIZE: egui::Vec2 = egui::vec2(640.0, 390.0);
+const POPOUT_MARGIN: f32 = 18.0;
 
 pub(super) struct VoiceDrag(pub Id, pub Id, pub Id);
 
@@ -197,15 +200,16 @@ impl MessagingUi {
 
 	/// Popout detached player window for stream viewing with always-on-top pin toggle.
 	pub(super) fn show_stream_popout(&mut self, ctx: &egui::Context, state: &mut State) {
-		if !self.voice_popout_open {
-			return;
-		}
 		let watching = state
 			.voice
 			.active
 			.as_ref()
 			.filter(|c| c.phase != Phase::Failed)
 			.and_then(|c| c.watching.map(|user| (c.channel, user)));
+		self.automatic_popout(ctx, watching.is_some());
+		if !self.voice_popout_open {
+			return;
+		}
 		let Some((channel, streamer)) = watching else {
 			self.voice_popout_open = false;
 			return;
@@ -224,133 +228,171 @@ impl MessagingUi {
 		} else {
 			egui::viewport::WindowLevel::Normal
 		};
-		ctx.show_viewport_immediate(
-			viewport_id,
-			egui::ViewportBuilder::default()
-				.with_title(title)
-				.with_inner_size([640.0, 390.0])
-				.with_min_inner_size([320.0, 200.0])
-				.with_decorations(false)
-				.with_window_level(level),
-			|ui, class| {
-				// A backend without multi-viewport support keeps the PiP fallback instead.
-				if class == egui::ViewportClass::EmbeddedWindow {
-					open = false;
-					return;
-				}
-				egui::CentralPanel::default()
-					.frame(egui::Frame::NONE.fill(egui::Color32::BLACK))
-					.show(ui, |ui| {
-						// Decorations are off, so a native close (⌘W) also closes the popout.
-						if ui.input(|input| input.viewport().close_requested()) {
-							open = false;
-							return;
-						}
-						let rect = ui.max_rect();
-						let bg_response = ui.interact(
-							rect,
-							ui.scope_id().with("popout-drag-and-context"),
-							egui::Sense::click_and_drag(),
-						);
-						if bg_response.drag_started() {
-							ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
-						}
-						egui::Popup::context_menu(&bg_response)
-							.close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-							.show(|ui| self.stream_audio_controls(ui));
+		let mut builder = egui::ViewportBuilder::default()
+			.with_title(title)
+			.with_inner_size(POPOUT_SIZE)
+			.with_min_inner_size([320.0, 200.0])
+			.with_decorations(false)
+			.with_window_level(level);
+		if self.voice_popout_auto {
+			// Opened by leaving Serein: sit at the monitor's corner without stealing focus
+			// from the app the user switched to.
+			builder = builder.with_active(false);
+			if let Some(position) = Self::popout_corner(ctx) {
+				builder = builder.with_position(position);
+			}
+		}
+		ctx.show_viewport_immediate(viewport_id, builder, |ui, class| {
+			// A backend without multi-viewport support keeps the PiP fallback instead.
+			if class == egui::ViewportClass::EmbeddedWindow {
+				open = false;
+				return;
+			}
+			egui::CentralPanel::default()
+				.frame(egui::Frame::NONE.fill(egui::Color32::BLACK))
+				.show(ui, |ui| {
+					// Decorations are off, so a native close (⌘W) also closes the popout.
+					if ui.input(|input| input.viewport().close_requested()) {
+						open = false;
+						return;
+					}
+					let rect = ui.max_rect();
+					let bg_response = ui.interact(
+						rect,
+						ui.scope_id().with("popout-drag-and-context"),
+						egui::Sense::click_and_drag(),
+					);
+					if bg_response.drag_started() {
+						ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
+					}
+					egui::Popup::context_menu(&bg_response)
+						.close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+						.show(|ui| self.stream_audio_controls(ui));
 
-						match &self.voice_stream_view {
-							Some(texture) => {
-								let content = fit_rect(rect, texture.size);
-								ui.put(
-									content,
-									egui::Image::from_texture((texture.id, content.size())),
-								);
-							}
-							None => {
-								ui.painter().rect_filled(rect, 0, STAGE_FILL);
-								let status = if self.voice_stream_status.is_empty() {
-									crate::i18n::translate("voice-stream-popout-connecting")
-								} else {
-									self.voice_stream_status.to_owned()
-								};
-								let spinner = egui::Rect::from_center_size(
-									rect.center() - egui::vec2(0.0, 18.0),
-									egui::Vec2::splat(24.0),
-								);
-								ui.put(spinner, egui::Spinner::new().color(STAGE_MUTED));
-								ui.painter().text(
-									rect.center() + egui::vec2(0.0, 18.0),
-									egui::Align2::CENTER_CENTER,
-									status,
-									egui::FontId::proportional(13.0),
-									STAGE_MUTED,
-								);
-							}
+					match &self.voice_stream_view {
+						Some(texture) => {
+							let content = fit_rect(rect, texture.size);
+							ui.put(
+								content,
+								egui::Image::from_texture((texture.id, content.size())),
+							);
 						}
-						// Overlay header on hover: Pin toggle & Close
-						let header_rect = egui::Rect::from_min_size(
-							rect.left_top(),
-							egui::vec2(rect.width(), 44.0),
-						);
-						let reveal = chrome_reveal(ui, rect, "popout-chrome");
-						if reveal > 0.0 {
-							let mut header_ui = ui.new_child(
-								egui::UiBuilder::new()
-									.max_rect(header_rect)
-									.layout(egui::Layout::right_to_left(egui::Align::Center)),
-							);
-							header_ui.spacing_mut().item_spacing.x = 8.0;
-							header_ui.add_space(8.0);
-							let close_btn = header_ui.add(
-								egui::Button::new("")
-									.fill(egui::Color32::from_black_alpha((180.0 * reveal) as u8))
-									.corner_radius(8),
-							);
-							crate::icons::paint(
-								header_ui.painter(),
-								crate::icons::Icon::Close,
-								close_btn.rect.shrink(8.0),
-								egui::Color32::WHITE.gamma_multiply(reveal),
-							);
-							if close_btn
-								.on_hover_text(crate::i18n::translate("voice-stream-popout-close"))
-								.clicked()
-							{
-								open = false;
-							}
-
-							let pin_color = if pinned {
-								design::palette(ui).accent
+						None => {
+							ui.painter().rect_filled(rect, 0, STAGE_FILL);
+							let status = if self.voice_stream_status.is_empty() {
+								crate::i18n::translate("voice-stream-popout-connecting")
 							} else {
-								egui::Color32::WHITE
+								self.voice_stream_status.to_owned()
 							};
-							let pin_btn = header_ui.add(
-								egui::Button::new("")
-									.fill(egui::Color32::from_black_alpha((180.0 * reveal) as u8))
-									.corner_radius(8),
+							let spinner = egui::Rect::from_center_size(
+								rect.center() - egui::vec2(0.0, 18.0),
+								egui::Vec2::splat(24.0),
 							);
-							crate::icons::paint(
-								header_ui.painter(),
-								crate::icons::Icon::Pin,
-								pin_btn.rect.shrink(8.0),
-								pin_color.gamma_multiply(reveal),
+							ui.put(spinner, egui::Spinner::new().color(STAGE_MUTED));
+							ui.painter().text(
+								rect.center() + egui::vec2(0.0, 18.0),
+								egui::Align2::CENTER_CENTER,
+								status,
+								egui::FontId::proportional(13.0),
+								STAGE_MUTED,
 							);
-							if pin_btn
-								.on_hover_text(crate::i18n::translate(if pinned {
-									"voice-stream-popout-unpin"
-								} else {
-									"voice-stream-popout-pin-on-top"
-								}))
-								.clicked()
-							{
-								self.voice_popout_pinned = !pinned;
-							}
 						}
-					});
-			},
-		);
+					}
+					// Overlay header on hover: Pin toggle & Close
+					let header_rect =
+						egui::Rect::from_min_size(rect.left_top(), egui::vec2(rect.width(), 44.0));
+					let reveal = chrome_reveal(ui, rect, "popout-chrome");
+					if reveal > 0.0 {
+						let mut header_ui = ui.new_child(
+							egui::UiBuilder::new()
+								.max_rect(header_rect)
+								.layout(egui::Layout::right_to_left(egui::Align::Center)),
+						);
+						header_ui.spacing_mut().item_spacing.x = 8.0;
+						header_ui.add_space(8.0);
+						let close_btn = header_ui.add(
+							egui::Button::new("")
+								.fill(egui::Color32::from_black_alpha((180.0 * reveal) as u8))
+								.corner_radius(8),
+						);
+						crate::icons::paint(
+							header_ui.painter(),
+							crate::icons::Icon::Close,
+							close_btn.rect.shrink(8.0),
+							egui::Color32::WHITE.gamma_multiply(reveal),
+						);
+						if close_btn
+							.on_hover_text(crate::i18n::translate("voice-stream-popout-close"))
+							.clicked()
+						{
+							open = false;
+						}
+
+						let pin_color = if pinned {
+							design::palette(ui).accent
+						} else {
+							egui::Color32::WHITE
+						};
+						let pin_btn = header_ui.add(
+							egui::Button::new("")
+								.fill(egui::Color32::from_black_alpha((180.0 * reveal) as u8))
+								.corner_radius(8),
+						);
+						crate::icons::paint(
+							header_ui.painter(),
+							crate::icons::Icon::Pin,
+							pin_btn.rect.shrink(8.0),
+							pin_color.gamma_multiply(reveal),
+						);
+						if pin_btn
+							.on_hover_text(crate::i18n::translate(if pinned {
+								"voice-stream-popout-unpin"
+							} else {
+								"voice-stream-popout-pin-on-top"
+							}))
+							.clicked()
+						{
+							self.voice_popout_pinned = !pinned;
+						}
+					}
+				});
+		});
 		self.voice_popout_open = open;
+	}
+
+	/// While a share is watched, leaving Serein opens the pinned popout at the monitor's
+	/// bottom-right corner, and returning closes an automatic popout again. A popout opened
+	/// by hand is left alone.
+	fn automatic_popout(&mut self, ctx: &egui::Context, watching: bool) {
+		let focused = ctx.input(|input| input.focused);
+		if self.voice_focus_seen.replace(focused) == Some(focused) {
+			return;
+		}
+		if focused {
+			if self.voice_popout_auto {
+				self.voice_popout_open = false;
+				self.voice_popout_auto = false;
+			}
+		} else if watching && !self.voice_popout_open && self.voice_fullscreen.is_none() {
+			self.voice_popout_open = true;
+			self.voice_popout_pinned = true;
+			self.voice_popout_auto = true;
+		}
+	}
+
+	/// Bottom-right corner of this monitor in points, as far as egui reports it.
+	fn popout_corner(ctx: &egui::Context) -> Option<egui::Pos2> {
+		ctx.input(|input| {
+			let monitor = input.viewport().monitor_size?;
+			(monitor.x >= POPOUT_SIZE.x + 2.0 * POPOUT_MARGIN
+				&& monitor.y >= POPOUT_SIZE.y + 2.0 * POPOUT_MARGIN)
+				.then(|| {
+					egui::pos2(
+						monitor.x - POPOUT_SIZE.x - POPOUT_MARGIN,
+						monitor.y - POPOUT_SIZE.y - POPOUT_MARGIN,
+					)
+				})
+		})
 	}
 
 	/// Bottom-right in-app Picture-in-Picture floating tile when navigating away from the stream.
@@ -475,6 +517,7 @@ impl MessagingUi {
 						.clicked()
 					{
 						self.voice_popout_open = true;
+						self.voice_popout_auto = false;
 					}
 
 					let expand = bar_ui.add(
@@ -4166,6 +4209,7 @@ impl MessagingUi {
 			);
 			if popout.clicked() {
 				self.voice_popout_open = true;
+				self.voice_popout_auto = false;
 			}
 			let volume = control(
 				&mut view,
@@ -7671,5 +7715,42 @@ mod tests {
 			commands.len()
 		);
 		assert_eq!(messaging.voice_focus, Some(StageFocus::Stream(Id(3))));
+	}
+
+	/// Leaving Serein while watching opens a pinned popout; returning closes that automatic
+	/// one, but never a popout the user opened by hand.
+	#[test]
+	fn losing_focus_opens_the_pinned_popout_and_returning_closes_it() {
+		let mut state = test_support::voice_demo_state();
+		state.voice.active.as_mut().unwrap().watching = Some(Id(3));
+		let mut messaging = MessagingUi::default();
+		let ctx = egui::Context::default();
+		let frame = |messaging: &mut MessagingUi, focused: bool| {
+			ctx.run_ui(
+				egui::RawInput {
+					focused,
+					..Default::default()
+				},
+				|ui| messaging.automatic_popout(ui.ctx(), true),
+			)
+			.drop_without_applying_deltas();
+		};
+		frame(&mut messaging, true);
+		assert!(!messaging.voice_popout_open);
+		frame(&mut messaging, false);
+		assert!(
+			messaging.voice_popout_open
+				&& messaging.voice_popout_pinned
+				&& messaging.voice_popout_auto,
+			"leaving Serein pins the stream in its own window"
+		);
+		frame(&mut messaging, true);
+		assert!(!messaging.voice_popout_open && !messaging.voice_popout_auto);
+		// A popout the user opened by hand survives the same focus changes.
+		messaging.voice_popout_open = true;
+		messaging.voice_popout_auto = false;
+		frame(&mut messaging, false);
+		frame(&mut messaging, true);
+		assert!(messaging.voice_popout_open);
 	}
 }
