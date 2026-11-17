@@ -4191,6 +4191,8 @@ voice-live-badge-live = NA ŻYWO
 voice-live-badge-live-2 = Na żywo
 # Context: live_badge
 voice-live-badge-streaming = Transmisja strumieniowa
+# Context: live_badge_button
+voice-live-badge-watch-stream = Oglądaj transmisję: { $name }
 # Context: microphone_preview_controls
 voice-microphone-preview-controls-hear-yourself-through-your-selected-speakers-use-headphones-to-avoid = Usłysz siebie poprzez wybrane głośniki. Używaj słuchawek, aby uniknąć sprzężenia zwrotnego.
 # Context: microphone_preview_controls

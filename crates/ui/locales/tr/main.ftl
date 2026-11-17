@@ -4182,6 +4182,8 @@ voice-live-badge-live = CANLI
 voice-live-badge-live-2 = Canlı
 # Context: live_badge
 voice-live-badge-streaming = Akış
+# Context: live_badge_button
+voice-live-badge-watch-stream = { $name } kişisinin yayınını izle
 # Context: microphone_preview_controls
 voice-microphone-preview-controls-hear-yourself-through-your-selected-speakers-use-headphones-to-avoid = Seçtiğiniz hoparlörlerden kendinizi dinleyin. Yankıyı önlemek için kulaklık kullanın.
 # Context: microphone_preview_controls

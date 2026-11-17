@@ -4192,6 +4192,8 @@ voice-live-badge-live = EN DIRECTO
 voice-live-badge-live-2 = En directo
 # Context: live_badge
 voice-live-badge-streaming = Transmisión
+# Context: live_badge_button
+voice-live-badge-watch-stream = Ver la transmisión de { $name }
 # Context: microphone_preview_controls
 voice-microphone-preview-controls-hear-yourself-through-your-selected-speakers-use-headphones-to-avoid = Escúchate a través de los altavoces seleccionados. Usa auriculares para evitar acoples.
 # Context: microphone_preview_controls

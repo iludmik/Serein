@@ -4231,6 +4231,8 @@ voice-live-badge-live = ŽIVĚ
 voice-live-badge-live-2 = Živě
 # Context: live_badge
 voice-live-badge-streaming = Streamuje
+# Context: live_badge_button
+voice-live-badge-watch-stream = Sledovat přenos: { $name }
 # Context: microphone_preview_controls
 voice-microphone-preview-controls-hear-yourself-through-your-selected-speakers-use-headphones-to-avoid = Poslouchejte se prostřednictvím vybraných reproduktorů. Používejte sluchátka, abyste se vyhnuli zpětné vazbě.
 # Context: microphone_preview_controls

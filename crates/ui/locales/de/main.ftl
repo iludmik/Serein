@@ -4192,6 +4192,8 @@ voice-live-badge-live = LIVE
 voice-live-badge-live-2 = Live
 # Context: live_badge
 voice-live-badge-streaming = Streaming
+# Context: live_badge_button
+voice-live-badge-watch-stream = Stream von { $name } ansehen
 # Context: microphone_preview_controls
 voice-microphone-preview-controls-hear-yourself-through-your-selected-speakers-use-headphones-to-avoid = Hören Sie sich selbst über Ihre ausgewählten Lautsprecher. Verwenden Sie Kopfhörer, um Rückkopplungen zu vermeiden.
 # Context: microphone_preview_controls

@@ -4220,6 +4220,8 @@ voice-live-badge-live = LIVE
 voice-live-badge-live-2 = 直播中
 # Context: live_badge
 voice-live-badge-streaming = 串流中
+# Context: live_badge_button
+voice-live-badge-watch-stream = 觀看 { $name } 的直播
 # Context: microphone_preview_controls
 voice-microphone-preview-controls-hear-yourself-through-your-selected-speakers-use-headphones-to-avoid = 會在所選喇叭聽到自己的聲音。請戴耳機避免回授。
 # Context: microphone_preview_controls

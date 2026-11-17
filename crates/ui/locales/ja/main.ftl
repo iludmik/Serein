@@ -4182,6 +4182,8 @@ voice-live-badge-live = ライブ
 voice-live-badge-live-2 = ライブ
 # Context: live_badge
 voice-live-badge-streaming = ストリーミング
+# Context: live_badge_button
+voice-live-badge-watch-stream = { $name } のストリームを見る
 # Context: microphone_preview_controls
 voice-microphone-preview-controls-hear-yourself-through-your-selected-speakers-use-headphones-to-avoid = 選択したスピーカーから自分の声を聞いてください。フィードバックを避けるためにヘッドフォンを使用してください。
 # Context: microphone_preview_controls

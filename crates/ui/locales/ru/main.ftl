@@ -4198,6 +4198,8 @@ voice-live-badge-live = В ЭФИРЕ
 voice-live-badge-live-2 = В эфире
 # Context: live_badge
 voice-live-badge-streaming = Потоковое вещание
+# Context: live_badge_button
+voice-live-badge-watch-stream = Смотреть трансляцию { $name }
 # Context: microphone_preview_controls
 voice-microphone-preview-controls-hear-yourself-through-your-selected-speakers-use-headphones-to-avoid = Услышьте себя через выбранные вами колонки. Используйте наушники, чтобы избежать обратной связи.
 # Context: microphone_preview_controls

@@ -4216,6 +4216,8 @@ voice-live-badge-live = 방송 중
 voice-live-badge-live-2 = 방송 중
 # Context: live_badge
 voice-live-badge-streaming = 방송 중
+# Context: live_badge_button
+voice-live-badge-watch-stream = { $name } 님의 방송 시청
 # Context: microphone_preview_controls
 voice-microphone-preview-controls-hear-yourself-through-your-selected-speakers-use-headphones-to-avoid = 선택한 스피커로 내 목소리를 들어보세요. 피드백을 방지하려면 헤드폰을 사용하세요.
 # Context: microphone_preview_controls

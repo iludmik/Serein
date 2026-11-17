@@ -5782,11 +5782,10 @@ fn live_badge_button(ui: &mut egui::Ui, enabled: bool, name: &str) -> egui::Resp
 		response.id.with("watch"),
 		egui::Sense::click(),
 	);
-	response.widget_info(|| {
-		egui::WidgetInfo::labeled(egui::Role::Button, true, format!("Watch {name}'s stream"))
-	});
+	let label = crate::i18n::translate_args("voice-live-badge-watch-stream", &[("name", name)]);
+	response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, label.clone()));
 	response
-		.on_hover_text(format!("Watch {name}'s stream"))
+		.on_hover_text(label)
 		.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
