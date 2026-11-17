@@ -48,6 +48,18 @@ pub struct WebVideo {
 	pub width: u32,
 	pub height: u32,
 }
+/// How the open provider player is presented.
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
+pub enum WebMode {
+	/// Playing in the embed box inside the conversation.
+	#[default]
+	Inline,
+	/// The centered theater over the whole client surface.
+	Theater,
+	/// The floating corner player that leaves the conversation usable.
+	Mini,
+}
+
 pub enum VideoCommand {
 	Play(Attachment),
 	Pause(bool),
@@ -96,9 +108,17 @@ pub struct VideoUi {
 	pub(super) fullscreen_request: Option<bool>,
 	/// The open provider player; the desktop places its webview over `web_bounds`.
 	pub web: Option<WebVideo>,
+	/// How the open player is presented; embed, theater, or floating mini player.
+	pub web_mode: WebMode,
+	/// The mode a theater close returns to.
+	web_prev_mode: WebMode,
 	/// Selection, source channel/message and media fingerprint; edits revoke the prior Play.
 	web_source: Option<(Option<Id>, Id, Id, egui::Id)>,
 	pub web_bounds: Option<egui::Rect>,
+	/// Last size of the mini player's video area, so a resized one reopens the same way.
+	web_mini_size: Option<egui::Vec2>,
+	/// Last top-left of the mini player, so a moved one reopens where the user left it.
+	web_mini_position: Option<egui::Pos2>,
 	/// Painted in the player stage when no webview can be shown (offline demo).
 	pub web_notice: Option<&'static str>,
 	/// A link the provider player asked to open; routed through the link confirmation.
@@ -128,8 +148,12 @@ impl Default for VideoUi {
 			fullscreen: None,
 			fullscreen_request: None,
 			web: None,
+			web_mode: WebMode::default(),
+			web_prev_mode: WebMode::default(),
 			web_source: None,
 			web_bounds: None,
+			web_mini_size: None,
+			web_mini_position: None,
 			web_notice: None,
 			web_external: None,
 		}
@@ -147,6 +171,9 @@ impl VideoUi {
 		self.duration = 0.0;
 		self.seen = false;
 		self.command = Some(VideoCommand::Stop);
+		self.web_mode = WebMode::default();
+		self.web_prev_mode = WebMode::default();
+		self.web_bounds = None;
 	}
 	pub(super) fn exit_fullscreen(&mut self) {
 		if let Some((ctx, previous, focus)) = self.fullscreen.take() {
@@ -905,7 +932,8 @@ impl VideoUi {
 	}
 }
 impl VideoUi {
-	/// A provider embed's poster; playing opens the theater player instead of a browser.
+	/// A provider embed's poster; playing shows the video in this embed box, with theater and
+	/// mini-player states a click away.
 	#[allow(clippy::too_many_arguments)]
 	pub(crate) fn show_provider(
 		&mut self,
@@ -933,6 +961,78 @@ impl VideoUi {
 		if poster.is_none() {
 			ui.painter()
 				.rect_filled(stage, CORNER, egui::Color32::BLACK);
+		}
+		// This message's embed owns inline playback: the webview covers everything below
+		// the strip, so the strip carries the expand and stop controls.
+		let playing_here = self.web_mode == WebMode::Inline
+			&& self.web.as_ref().is_some_and(|open| open == video)
+			&& self
+				.web_source
+				.is_some_and(|(open_selected, channel, id, _)| {
+					open_selected == selected && channel == message.channel && id == message.id
+				});
+		if playing_here {
+			const HEADER: f32 = 30.0;
+			let bar = egui::Rect::from_min_max(
+				stage.min,
+				egui::pos2(stage.max.x, (stage.min.y + HEADER).min(stage.max.y)),
+			);
+			// A message scrolled halfway out hides the webview instead of clipping it.
+			let view = egui::Rect::from_min_max(bar.left_bottom(), stage.max);
+			let clipped = view.intersect(ui.clip_rect());
+			self.web_bounds = clipped.is_positive().then_some(clipped);
+			ui.painter().rect_filled(
+				bar,
+				egui::CornerRadius {
+					nw: CORNER,
+					ne: CORNER,
+					sw: 0,
+					se: 0,
+				},
+				egui::Color32::from_black_alpha(235),
+			);
+			let mut controls = ui.new_child(
+				egui::UiBuilder::new()
+					.max_rect(bar)
+					.layout(egui::Layout::right_to_left(egui::Align::Center)),
+			);
+			controls.spacing_mut().item_spacing.x = 6.0;
+			controls.add_space(6.0);
+			if crate::attachments::glass_button(
+				&mut controls,
+				crate::icons::Icon::Close,
+				24.0,
+				"Stop playback",
+			)
+			.clicked()
+			{
+				self.web_stop();
+			}
+			if crate::attachments::glass_button(
+				&mut controls,
+				crate::icons::Icon::Fullscreen,
+				24.0,
+				"Theater view",
+			)
+			.clicked()
+			{
+				self.web_mode = WebMode::Theater;
+			}
+			controls.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+				ui.add(
+					egui::Label::new(
+						egui::RichText::new(if video.title.is_empty() {
+							&video.provider
+						} else {
+							&video.title
+						})
+						.strong()
+						.color(egui::Color32::WHITE),
+					)
+					.truncate(),
+				);
+			});
+			return;
 		}
 		let play = ui.interact(
 			stage.shrink2(egui::vec2(0.0, 44.0).min(stage.size() / 3.0)),
@@ -992,16 +1092,31 @@ impl VideoUi {
 			}
 		}
 		if play.on_hover_text("Play here").clicked() {
-			self.stop();
-			self.web = Some(video.clone());
-			self.web_source = Some((
-				selected,
-				message.channel,
-				message.id,
-				egui::Id::unique((&message.embeds, &message.attachments)),
-			));
-			self.web_notice = None;
+			// Playing in the embed box; theater and mini stay one click away from it.
+			if self.web.as_ref() == Some(video) {
+				self.web_mode = WebMode::Inline;
+			} else {
+				self.stop();
+				self.web = Some(video.clone());
+				self.web_source = Some((
+					selected,
+					message.channel,
+					message.id,
+					egui::Id::unique((&message.embeds, &message.attachments)),
+				));
+				self.web_notice = None;
+				self.web_mode = WebMode::Inline;
+			}
 		}
+	}
+
+	/// Stops the provider player entirely; the mini player keeps its remembered geometry.
+	fn web_stop(&mut self) {
+		self.web = None;
+		self.web_source = None;
+		self.web_bounds = None;
+		self.web_notice = None;
+		self.web_mode = WebMode::default();
 	}
 	pub(super) fn web_source_available(&self, state: &client_core::State) -> bool {
 		let Some((selected, channel, id, media)) = self.web_source else {
@@ -1037,20 +1152,46 @@ impl VideoUi {
 			})
 	}
 	/// Theater overlay for the provider player. The desktop places the webview over the
-	/// stage reserved here, so nothing else may paint above it while it is open.
-	pub(super) fn show_web_player(&mut self, ctx: &egui::Context, opening: &mut Option<String>) {
+	/// Stage reserved here, so nothing else may paint above it while it is open.
+	pub(super) fn show_web_player(
+		&mut self,
+		ctx: &egui::Context,
+		opening: &mut Option<String>,
+		composer: Option<egui::Rect>,
+	) {
 		if let Some(url) = self.web_external.take() {
 			*opening = crate::markdown::external_url(&url);
-			self.web = None;
+			self.web_stop();
 		}
 		let Some(video) = self.web.clone() else {
 			self.web_source = None;
 			self.web_bounds = None;
+			self.web_mode = WebMode::default();
 			return;
 		};
+		match self.web_mode {
+			WebMode::Inline => {
+				// The embed stage publishes its on-screen rect while drawing; a source
+				// scrolled away hides the webview and keeps the audio playing.
+				self.web_bounds = None;
+			}
+			WebMode::Mini => self.show_mini_player(ctx, &video, composer, opening),
+			WebMode::Theater => self.show_theater(ctx, &video, opening),
+		}
+	}
+
+	/// The centered theater over the whole client surface; closing keeps playback and
+	/// shrinks to the mini player.
+	fn show_theater(
+		&mut self,
+		ctx: &egui::Context,
+		video: &WebVideo,
+		opening: &mut Option<String>,
+	) {
 		let screen = ctx.content_rect();
 		let id = egui::Id::unique("provider-video-player");
-		let mut close = false;
+		let mut stop = false;
+		let mut mini = false;
 		let modal = egui::Modal::new(id)
 			.area(
 				egui::Modal::default_area(id)
@@ -1087,7 +1228,7 @@ impl VideoUi {
 						.interact_pointer_pos()
 						.is_some_and(|pos| !stage.union(bar).contains(pos))
 				{
-					close = true;
+					mini = true;
 				}
 				ui.scope_builder(
 					egui::UiBuilder::new()
@@ -1103,7 +1244,17 @@ impl VideoUi {
 						)
 						.clicked()
 						{
-							close = true;
+							stop = true;
+						}
+						if crate::attachments::glass_button(
+							ui,
+							crate::icons::Icon::ChevronDown,
+							32.0,
+							"Mini player",
+						)
+						.clicked()
+						{
+							mini = true;
 						}
 						if let Some(page) = &video.page
 							&& crate::attachments::glass_button(
@@ -1115,7 +1266,7 @@ impl VideoUi {
 							.clicked()
 						{
 							*opening = Some(page.clone());
-							close = true;
+							stop = true;
 						}
 						ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
 							ui.add(
@@ -1146,12 +1297,177 @@ impl VideoUi {
 				}
 				stage
 			});
-		if close || modal.should_close() || opening.is_some() {
-			self.web = None;
+		if stop {
+			self.web_stop();
+		} else if mini || modal.should_close() {
+			// Leaving the theater keeps playing in the corner instead of stopping.
+			self.web_mode = WebMode::Mini;
 			self.web_bounds = None;
 		} else {
 			self.web_bounds = Some(modal.inner);
 		}
+	}
+
+	/// The floating mini player: header strip and grip around the webview video over the
+	/// bottom-left of the conversation, so typing and the stream PiP stay usable.
+	fn show_mini_player(
+		&mut self,
+		ctx: &egui::Context,
+		video: &WebVideo,
+		composer: Option<egui::Rect>,
+		opening: &mut Option<String>,
+	) {
+		// A modal above must not have a native webview painted over it; audio keeps playing.
+		if ctx.memory(|memory| memory.top_modal_layer().is_some()) {
+			self.web_bounds = None;
+			return;
+		}
+		const HEADER: f32 = 30.0;
+		const EDGE: f32 = 10.0;
+		const MARGIN: f32 = 18.0;
+		const MIN_VIDEO: egui::Vec2 = egui::vec2(280.0, 158.0);
+		let screen = ctx.content_rect();
+		let aspect = if video.width > 0 && video.height > 0 {
+			(video.width as f32 / video.height as f32).clamp(0.5, 2.4)
+		} else {
+			16.0 / 9.0
+		};
+		let size = self
+			.web_mini_size
+			.unwrap_or_else(|| {
+				let width = 400.0_f32.min(screen.width() * 0.5);
+				egui::vec2(width, (width / aspect).max(MIN_VIDEO.y))
+			})
+			.max(MIN_VIDEO)
+			.min(screen.size() - egui::vec2(2.0 * MARGIN, 2.0 * MARGIN + HEADER + EDGE));
+		// Default spot: bottom-left, lifted above the composer so typing stays clear.
+		let composer_top = composer.map_or(screen.bottom() - 104.0, |rect| rect.top());
+		let default_pos = egui::pos2(
+			screen.left() + MARGIN,
+			(composer_top - MARGIN - HEADER - EDGE - size.y).max(screen.top() + MARGIN),
+		);
+		let pos = self.web_mini_position.unwrap_or(default_pos);
+		let pos = egui::pos2(
+			pos.x.clamp(
+				screen.left() + MARGIN,
+				(screen.right() - size.x - MARGIN).max(screen.left() + MARGIN),
+			),
+			pos.y.clamp(
+				screen.top() + MARGIN,
+				(screen.bottom() - HEADER - EDGE - MARGIN).max(screen.top() + MARGIN),
+			),
+		);
+		self.web_mini_position = Some(pos);
+		let area = egui::Rect::from_min_size(pos, egui::vec2(size.x, HEADER + size.y + EDGE));
+		egui::Area::new(egui::Id::unique("web-video-mini"))
+			.order(egui::Order::Foreground)
+			.fixed_pos(pos)
+			.show(ctx, |ui| {
+				let (rect, _) = ui.allocate_exact_size(area.size(), egui::Sense::hover());
+				ui.painter()
+					.rect_filled(rect, CORNER, egui::Color32::from_black_alpha(235));
+				// The header is outside the webview rect, so it stays clickable: drag it to
+				// move the player, use its buttons without the page stealing the click.
+				let handle = ui.interact(
+					egui::Rect::from_min_max(rect.min, egui::pos2(rect.max.x, rect.min.y + HEADER)),
+					ui.scope_id().with("web-mini-drag"),
+					egui::Sense::click_and_drag(),
+				);
+				if handle.dragged() {
+					self.web_mini_position = Some(pos + handle.drag_delta());
+				}
+				handle.widget_info(|| {
+					egui::WidgetInfo::labeled(egui::Role::Button, true, "Move video player")
+				});
+				let mut header = ui.new_child(
+					egui::UiBuilder::new()
+						.max_rect(egui::Rect::from_min_max(
+							rect.min,
+							egui::pos2(rect.max.x, rect.min.y + HEADER),
+						))
+						.layout(egui::Layout::right_to_left(egui::Align::Center)),
+				);
+				header.spacing_mut().item_spacing.x = 6.0;
+				header.add_space(6.0);
+				if crate::attachments::glass_button(
+					&mut header,
+					crate::icons::Icon::Close,
+					24.0,
+					"Stop playback",
+				)
+				.clicked()
+				{
+					self.web_stop();
+				}
+				if crate::attachments::glass_button(
+					&mut header,
+					crate::icons::Icon::Fullscreen,
+					24.0,
+					"Theater view",
+				)
+				.clicked()
+				{
+					self.web_mode = WebMode::Theater;
+				}
+				if let Some(page) = &video.page
+					&& crate::attachments::glass_button(
+						&mut header,
+						crate::icons::Icon::External,
+						24.0,
+						"Open in browser…",
+					)
+					.clicked()
+				{
+					*opening = Some(page.clone());
+					self.web_stop();
+				}
+				header.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+					ui.add(
+						egui::Label::new(
+							egui::RichText::new(if video.title.is_empty() {
+								&video.provider
+							} else {
+								&video.title
+							})
+							.strong()
+							.color(egui::Color32::WHITE),
+						)
+						.truncate(),
+					);
+				});
+				// The grip lives on the edge strip, also outside the webview rect.
+				let grip = ui.interact(
+					egui::Rect::from_min_size(
+						rect.right_bottom() - egui::vec2(24.0, EDGE),
+						egui::vec2(24.0, EDGE),
+					),
+					ui.scope_id().with("web-mini-resize"),
+					egui::Sense::drag(),
+				);
+				if grip.hovered() {
+					ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeNwSe);
+				}
+				if grip.dragged() {
+					self.web_mini_size = Some((size + grip.drag_delta()).max(MIN_VIDEO).min(
+						screen.size() - egui::vec2(2.0 * MARGIN, 2.0 * MARGIN + HEADER + EDGE),
+					));
+				}
+				// The webview covers only the video area between the chrome strips.
+				let view = egui::Rect::from_min_max(
+					egui::pos2(rect.left(), rect.min.y + HEADER),
+					egui::pos2(rect.right(), rect.bottom() - EDGE),
+				);
+				if let Some(notice) = self.web_notice {
+					ui.painter().text(
+						view.center(),
+						egui::Align2::CENTER_CENTER,
+						notice,
+						egui::FontId::proportional(12.0),
+						egui::Color32::from_white_alpha(220),
+					);
+				}
+				self.web_bounds = Some(view);
+			});
 	}
 }
 impl Drop for VideoUi {
@@ -1500,10 +1816,11 @@ mod tests {
 		}
 	}
 	#[test]
-	fn provider_backdrop_closes_without_opening_a_link() {
+	fn provider_backdrop_shrinks_to_the_mini_player_without_opening_a_link() {
 		let message = provider_message(Id(2));
 		let mut video = VideoUi::default();
 		video.web = crate::embeds::provider_video(&message.embeds[0]);
+		video.web_mode = crate::video::WebMode::Theater;
 		let ctx = egui::Context::default();
 		let mut opening = None;
 		for pressed in [None, None, Some(true), Some(false)] {
@@ -1528,11 +1845,12 @@ mod tests {
 					events,
 					..Default::default()
 				},
-				|ui| video.show_web_player(ui.ctx(), &mut opening),
+				|ui| video.show_web_player(ui.ctx(), &mut opening, None),
 			)
 			.drop_without_applying_deltas();
 		}
-		assert!(video.web.is_none() && video.web_bounds.is_none());
+		assert!(video.web.is_some() && video.web_mode == WebMode::Mini);
+		assert!(video.web_bounds.is_none());
 		assert!(opening.is_none());
 	}
 	#[test]
@@ -1554,8 +1872,9 @@ mod tests {
 		let mut frame = |state: &client_core::State, available: bool| {
 			view.video.web = Some(web.clone());
 			view.video.web_source = Some(source);
+			view.video.web_mode = crate::video::WebMode::Theater;
 			ctx.run_ui(egui::RawInput::default(), |ui| {
-				assert_eq!(view.show_fullscreen_video(ui.ctx(), state), available);
+				assert_eq!(view.show_fullscreen_video(ui.ctx(), state, true), available);
 			})
 			.drop_without_applying_deltas();
 			assert_eq!(view.video.web.is_some(), available);

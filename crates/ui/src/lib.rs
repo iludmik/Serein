@@ -5114,7 +5114,7 @@ impl MessagingUi {
 				.rect_filled(ui.max_rect(), 0, egui::Color32::BLACK);
 			return commands;
 		}
-		if self.timeline.show_fullscreen_video(ui.ctx(), state) {
+		if self.timeline.show_fullscreen_video(ui.ctx(), state, true) {
 			ui.painter()
 				.rect_filled(ui.max_rect(), 0, egui::Color32::BLACK);
 			return commands;
@@ -5782,7 +5782,7 @@ impl MessagingUi {
 					);
 					return;
 				}
-				egui::Panel::bottom("composer")
+				let composer = egui::Panel::bottom("composer")
 					.show_separator_line(false)
 					.frame(
 						egui::Frame::new()
@@ -5812,6 +5812,8 @@ impl MessagingUi {
 						}
 						self.composer(ui, state, channel, &ctx, &mut commands);
 					});
+				// The video mini player defaults to just above this panel.
+				self.timeline.composer_screen = Some(composer.response.rect);
 				if let Some((shape, top)) = message_fill {
 					let remaining = ui.available_rect_before_wrap();
 					ui.painter().set(

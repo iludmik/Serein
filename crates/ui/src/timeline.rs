@@ -159,6 +159,9 @@ pub struct TimelineView {
 	pub(super) download: crate::attachments::DownloadUi,
 	pub(super) audio: crate::audio::AudioUi,
 	pub(super) video: crate::video::VideoUi,
+	/// The composer panel's screen rect from the last frame, so the mini player defaults
+	/// above it instead of blocking the message input.
+	pub(super) composer_screen: Option<egui::Rect>,
 	pub(super) opening: Option<String>,
 	pub(super) browser_opening: Option<String>,
 	/// The translation link whose message text was cut to fit. It applies only while it is
@@ -2340,13 +2343,25 @@ fn show_system(
 	}
 }
 impl TimelineView {
-	pub(super) fn show_fullscreen_video(&mut self, ctx: &egui::Context, state: &State) -> bool {
-		if self.video.web.is_some() && !self.video.web_source_available(state) {
-			self.video.web = None;
-		}
-		self.video.show_web_player(ctx, &mut self.opening);
-		if self.video.web.is_some() {
-			return true;
+	pub(super) fn show_fullscreen_video(
+		&mut self,
+		ctx: &egui::Context,
+		state: &State,
+		web: bool,
+	) -> bool {
+		if web {
+			if self.video.web.is_some() && !self.video.web_source_available(state) {
+				self.video.web = None;
+			}
+			// The embed, mini, or theater presentation; only the theater owns the surface.
+			self.video
+				.show_web_player(ctx, &mut self.opening, self.composer_screen);
+			if self.video.web.is_some() && self.video.web_mode == crate::video::WebMode::Theater {
+				return true;
+			}
+		} else if self.video.is_fullscreen() && self.video.web.is_some() {
+			// Native fullscreen owns the surface; the webview must not float over it.
+			self.video.web_bounds = None;
 		}
 		if self.video.is_fullscreen() {
 			// Runs before the timeline lays out, so the tweak is read directly.
@@ -5493,7 +5508,7 @@ impl TimelineView {
 			self.embed_viewing = None;
 			self.viewing = Some((message_id, attachment_id));
 		}
-		self.show_fullscreen_video(ui.ctx(), state);
+		self.show_fullscreen_video(ui.ctx(), state, false);
 		if let Some((message, media)) = self.download.embed_view_request.take()
 			&& let Some(source) = display_message(state, message)
 		{

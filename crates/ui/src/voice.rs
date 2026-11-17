@@ -491,8 +491,15 @@ impl MessagingUi {
 			.unwrap_or(egui::vec2(280.0, 158.0))
 			.max(egui::vec2(200.0, 112.0));
 		let pip_margin = egui::vec2(18.0, 18.0);
-		let pip_rect =
+		let mut pip_rect =
 			egui::Rect::from_min_size(screen.right_bottom() - pip_size - pip_margin, pip_size);
+		// The provider player's webview paints above egui, so keep the PiP clear of it.
+		if let Some(web) = self.timeline.video.web_bounds
+			&& pip_rect.intersects(web)
+		{
+			pip_rect.min.y =
+				(web.min.y - pip_margin.y - pip_size.y).max(screen.top() + pip_margin.y);
+		}
 
 		egui::Area::new(egui::Id::unique("voice-stream-pip"))
 			.order(egui::Order::Foreground)
