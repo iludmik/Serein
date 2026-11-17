@@ -18,6 +18,9 @@ use zeroize::Zeroizing;
 
 /// Rapid mute/deafen toggles inside this window collapse into one voice state update.
 const STATE_COALESCE: Duration = Duration::from_millis(120);
+/// A viewer's Stream Delete answer to opcode 19 arrives promptly; after this window a delete
+/// for the same key is more likely the owner ending the stream.
+const UNWATCH_ECHO: Duration = Duration::from_secs(5);
 
 struct StreamAttempt {
 	channel: Id,
@@ -65,6 +68,8 @@ pub(super) struct Calls {
 	superseded: Option<(Id, u64, Option<Id>)>,
 	stream: Option<StreamAttempt>,
 	watch: Option<WatchAttempt>,
+	/// Key this device stopped watching with opcode 19, until its Stream Delete answer.
+	unwatch: Option<(String, Instant)>,
 	// Optional metadata, retained until READY_SUPPLEMENTAL or reset within the roster budget.
 	// Overflow leaves participants using the existing user-ID fallback.
 	pub(super) users: BTreeMap<Id, User>,
@@ -97,6 +102,7 @@ impl Calls {
 		self.superseded = None;
 		self.stream = None;
 		self.watch = None;
+		self.unwatch = None;
 		self.users.clear();
 	}
 	pub(super) fn invalidate(&mut self, channel: Id) {
@@ -570,8 +576,12 @@ impl Calls {
 				{
 					return Ok(None);
 				}
-				// Viewers leave with the same opcode; later events for the key are ignored.
+				// Viewers leave with the same opcode; its Stream Delete answer is not the owner
+				// going offline, so remember the key and ignore that answer below.
 				let key = self.watch.take().map(|watch| watch.key);
+				if let Some(key) = &key {
+					self.unwatch = Some((key.clone(), Instant::now()));
+				}
 				Ok(Some(Frame::Text(
 					json!({"op":19,"d":{"stream_key":key}}).to_string().into(),
 				)))
@@ -722,6 +732,21 @@ impl Calls {
 		}
 		Ok(())
 	}
+	/// True once for the Stream Delete that answers this device's own StopWatching. Viewers
+	/// leave with opcode 19, so Discord reports the key we just left; that must not be applied
+	/// as the owner ending the stream, or the share disappears from the call and cannot be
+	/// watched again. The short window keeps a later, genuine owner stop effective.
+	fn answered_stop_watching(&mut self, key: &str) -> bool {
+		let Some((stopped, at)) = &self.unwatch else {
+			return false;
+		};
+		if stopped != key {
+			return false;
+		}
+		let recent = at.elapsed() < UNWATCH_ECHO;
+		self.unwatch = None;
+		recent
+	}
 	fn stream_dispatch(
 		&mut self,
 		kind: &str,
@@ -731,11 +756,21 @@ impl Calls {
 		let Ok(key) = decode::<stream::Key>(data) else {
 			return Ok(());
 		};
+		if kind == "STREAM_CREATE"
+			&& self
+				.unwatch
+				.as_ref()
+				.is_some_and(|(stopped, _)| stopped == &key.stream_key)
+		{
+			self.unwatch = None;
+		}
+		let answered = kind == "STREAM_DELETE" && self.answered_stop_watching(&key.stream_key);
 		// A stream in this call names its owner even when this device neither streams nor
 		// watches it; private calls give no `self_stream` on their participants. A creation
 		// needs the joined call, while a deletion also clears the retained membership of a
 		// call this device already left.
-		if let Some((guild, channel, user)) = key.target()
+		if !answered
+			&& let Some((guild, channel, user)) = key.target()
 			&& guild.is_none()
 			&& self.allowed.get(&channel) == Some(&None)
 			&& match kind {
@@ -2794,5 +2829,80 @@ mod tests {
 			events.lock().unwrap().is_empty(),
 			"a creation needs the joined call"
 		);
+	}
+
+	/// Regression: stopping a DM watch made the owner look offline, because Discord's Stream
+	/// Delete answer to the viewer's opcode 19 was applied as the owner ending the share.
+	#[test]
+	fn stopping_a_dm_watch_keeps_the_owner_streaming() {
+		let mut calls = Calls::default();
+		calls.allowed.insert(Id(20), None);
+		calls
+			.packet(Command::Join {
+				channel: Id(20),
+				request: 7,
+				ring: false,
+				mute: false,
+				deaf: false,
+			})
+			.unwrap();
+		let events = Mutex::new(Vec::new());
+		let emit = |event| {
+			events.lock().unwrap().push(event);
+			Ok(())
+		};
+		calls
+			.stream_packet(
+				Command::WatchStream {
+					channel: Id(20),
+					request: 7,
+					stream_request: 1,
+					streamer: Id(2),
+				},
+				Some(Id(1)),
+			)
+			.unwrap();
+		assert!(
+			calls
+				.stream_packet(
+					Command::StopWatching {
+						channel: Id(20),
+						request: 7,
+						stream_request: 1,
+					},
+					Some(Id(1)),
+				)
+				.unwrap()
+				.is_some()
+		);
+		calls
+			.dispatch(
+				"STREAM_DELETE",
+				br#"{"stream_key":"call:20:2"}"#,
+				Some(Id(1)),
+				&emit,
+			)
+			.unwrap();
+		assert!(
+			events.lock().unwrap().is_empty(),
+			"the viewer's own unsubscribe must not clear the owner's live state"
+		);
+		// The owner actually ending the share still reports offline.
+		calls
+			.dispatch(
+				"STREAM_DELETE",
+				br#"{"stream_key":"call:20:2"}"#,
+				Some(Id(1)),
+				&emit,
+			)
+			.unwrap();
+		assert!(matches!(
+			events.lock().unwrap().pop().unwrap(),
+			Event::Voice(voice::Event::ParticipantStream {
+				channel: Id(20),
+				user: Id(2),
+				streaming: false,
+			})
+		));
 	}
 }
