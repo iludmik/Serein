@@ -105,6 +105,61 @@ impl Scheduled {
 	}
 }
 
+/// Decoder output: keep the watched user's pictures and wake the UI when one is due.
+///
+/// Pictures are decoded ahead of their presentation time. Waking the UI on decode as well
+/// ran a full UI pass that had nothing new to show, doubling the passes per stream frame.
+fn frame_sink(
+	slot: Arc<Mutex<Scheduled>>,
+	wake: egui::Context,
+	streamer: u64,
+) -> discord_voice::VideoSink {
+	Arc::new(move |frame: discord_voice::RemoteFrame| {
+		// Server-originated pictures carry user 0 and belong to this stream too.
+		if frame.user != streamer && frame.user != 0 {
+			return;
+		}
+		let now = Instant::now();
+		let due = frame
+			.presentation
+			.as_ref()
+			.map(|presentation| presentation.deadline(now).saturating_duration_since(now));
+		if slot.lock().is_ok_and(|mut slot| slot.store(frame)) {
+			match due {
+				Some(delay) => wake.request_repaint_after(delay),
+				None => wake.request_repaint(),
+			}
+		}
+	})
+}
+
+/// Moves due pictures forward and uploads the newest one; true when a new picture is shown.
+/// Uploading copies the planes into GPU staging, so it runs under the slot lock and the
+/// decoder keeps refilling the same allocation.
+fn present(
+	frames: &Mutex<Scheduled>,
+	texture: &mut crate::gpu_video::VideoTexture,
+	ui: &mut ui::MessagingUi,
+	ctx: &egui::Context,
+) -> bool {
+	let Ok(mut slot) = frames.try_lock() else {
+		// The decoder is storing a picture; look again shortly instead of waiting a frame.
+		ctx.request_repaint_after(Duration::from_millis(5));
+		return false;
+	};
+	if let Some(deadline) = slot.advance(Instant::now()) {
+		ctx.request_repaint_after(deadline.saturating_duration_since(Instant::now()));
+	}
+	if let Some((picture, fresh)) = slot.latest.as_mut()
+		&& std::mem::take(fresh)
+		&& let Some(shown) = texture.upload(ctx, "remote-stream", picture.borrow())
+	{
+		ui.voice_stream_view = Some(shown);
+		return true;
+	}
+	false
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct Context {
 	generation: u64,
@@ -368,18 +423,8 @@ impl Watch {
 			}
 			// Uploading copies the planes into GPU staging, so it runs under the slot lock
 			// and the decoder keeps refilling the same allocation.
-			if let Ok(mut slot) = live.frames.try_lock() {
-				if let Some(deadline) = slot.advance(Instant::now()) {
-					ctx.request_repaint_after(deadline.saturating_duration_since(Instant::now()));
-				}
-				if let Some((picture, fresh)) = slot.latest.as_mut()
-					&& std::mem::take(fresh)
-					&& let Some(texture) =
-						self.texture.upload(ctx, "remote-stream", picture.borrow())
-				{
-					ui.voice_stream_view = Some(texture);
-					self.status = "Watching the stream";
-				}
+			if present(&live.frames, &mut self.texture, ui, ctx) {
+				self.status = "Watching the stream";
 			}
 		} else {
 			ui.voice_stream_view = None;
@@ -419,20 +464,10 @@ impl Watch {
 			request: pending.context.stream_request,
 		};
 		let frames = Arc::new(Mutex::new(Scheduled::default()));
-		let slot = frames.clone();
-		let wake = ctx.clone();
-		let streamer = pending.context.streamer;
-		let streamer_user = streamer.0;
-		let sink: discord_voice::VideoSink = Arc::new(move |frame: discord_voice::RemoteFrame| {
-			if frame.user != streamer_user && frame.user != 0 {
-				return;
-			}
-			if slot.lock().is_ok_and(|mut slot| slot.store(frame)) {
-				wake.request_repaint();
-			}
-		});
+		let sink = frame_sink(frames.clone(), ctx.clone(), pending.context.streamer.0);
 		let (send, events) = watch::channel(None);
 		let wake = ctx.clone();
+		let streamer = pending.context.streamer;
 		let identity = pending.identity;
 		let audio = pending.audio;
 		let task = runtime.spawn(async move {
@@ -713,5 +748,31 @@ mod tests {
 		assert!(queue.pending.is_empty());
 		assert_eq!(queue.bytes, 0);
 		assert!(queue.latest.as_ref().unwrap().1);
+	}
+
+	/// Decoding runs ahead of presentation; waking the UI on decode too ran a full UI pass
+	/// with nothing new to show, doubling the passes per stream frame.
+	#[test]
+	fn decoded_pictures_wake_the_ui_when_due_not_when_decoded() {
+		let ctx = egui::Context::default();
+		let delays = Arc::new(Mutex::new(Vec::new()));
+		let seen = delays.clone();
+		ctx.set_request_repaint_callback(move |info| seen.lock().unwrap().push(info.delay));
+		let sink = frame_sink(Arc::default(), ctx.clone(), 7);
+		let data = i420(4, 4, 9);
+		let mut scheduled = frame(4, 4, &data);
+		scheduled.presentation = Some(discord_voice::Presentation::new(
+			Instant::now() + Duration::from_millis(80),
+		));
+		sink(scheduled);
+		let mut other = frame(4, 4, &data);
+		other.user = 8;
+		sink(other);
+		let requested = std::mem::take(&mut *delays.lock().unwrap());
+		assert_eq!(requested.len(), 1, "{requested:?}");
+		assert!(requested[0] >= Duration::from_millis(40), "{requested:?}");
+		// Pictures without a presentation time are shown as soon as they arrive.
+		sink(frame(4, 4, &data));
+		assert_eq!(*delays.lock().unwrap(), [Duration::ZERO]);
 	}
 }
