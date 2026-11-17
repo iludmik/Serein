@@ -696,6 +696,25 @@ impl MessagingUi {
 										.truncate()
 										.selectable(false),
 									);
+									// Discord shows the friend's platforms right after the name.
+									let online = status.is_some_and(|status| {
+										matches!(status, "online" | "idle" | "dnd")
+									});
+									let platforms = crate::member_platforms::active(
+										clients,
+										online
+											&& restricted.is_none() && user.kind
+											== model::AccountKind::Human && (state.demo
+											|| state.gateway_connected),
+									);
+									let platform_color = match status {
+										Some("idle") => colors.warning,
+										Some("dnd") => colors.danger,
+										_ => colors.positive,
+									};
+									for platform in platforms {
+										platform.show(ui, language, platform_color);
+									}
 									let username = restricted
 										.map(|(_, name, _)| name.as_str())
 										.or_else(|| state.friend_username(user.id));

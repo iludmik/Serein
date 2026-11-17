@@ -182,6 +182,17 @@ impl Avatars {
 		self.paint_fitted(ui, &key, rect, 0, false);
 	}
 
+	/// Whether the user's cosmetic nameplate would paint behind a row right now, so marks
+	/// and platform icons can back themselves with a chip to stay readable on top of it.
+	pub(crate) fn nameplate_active(&self, user: &User) -> bool {
+		self.cosmetics.nameplates
+			&& user
+				.cosmetics
+				.as_deref()
+				.and_then(|cosmetics| cosmetics.nameplate.as_ref())
+				.is_some_and(|nameplate| nameplate.active(model::unix_now()))
+	}
+
 	/// Paints the user's nameplate behind a row. Offline rows keep only a faint image until
 	/// hovered, and hovered rows play the animated artwork once it has loaded.
 	#[allow(clippy::too_many_arguments)]

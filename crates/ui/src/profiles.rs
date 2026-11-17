@@ -4148,6 +4148,26 @@ fn card_view(
 							if let Some(clan) = clan.filter(|_| !full) {
 								clan_chip(ui, &theme, avatars, clan, state.demo);
 							}
+							// The user's platforms beside the name, as the member list shows.
+							let (status, _, _, clients) = presence(state, user.id, None);
+							let status = shown_status(state, user.id, status);
+							let online = status
+								.is_some_and(|status| matches!(status, "online" | "idle" | "dnd"));
+							let platforms = crate::member_platforms::active(
+								clients,
+								online
+									&& !user.webhook && user.kind == model::AccountKind::Human
+									&& (state.demo || state.gateway_connected),
+							);
+							let colors = crate::design::palette(ui);
+							let platform_color = match status {
+								Some("idle") => colors.warning,
+								Some("dnd") => colors.danger,
+								_ => colors.positive,
+							};
+							for platform in platforms {
+								platform.show(ui, crate::i18n::current(), platform_color);
+							}
 						});
 						let mut identity = Vec::new();
 						if let Some(data) = data {

@@ -2021,12 +2021,18 @@ impl MessagingUi {
 												&member.user,
 												(guild, &member.roles),
 											);
+											let nameplate =
+												self.avatars.nameplate_active(&member.user);
 											let trailing =
 												profiles::server_tag_width(ui, server_tag)
 													+ if server_tag.is_some() { 5.0 } else { 0.0 }
 													+ marks.reserve() + platforms.clone().count()
 													as f32 * (member_platforms::SIZE
-													+ ui.spacing().item_spacing.x);
+													+ ui.spacing().item_spacing.x) + if nameplate {
+													9.0
+												} else {
+													0.0
+												};
 											crate::name_styles::in_row(
 												response.contains_pointer() || response.has_focus(),
 												|| {
@@ -2059,14 +2065,28 @@ impl MessagingUi {
 													state.demo,
 												);
 											}
-											marks.show(ui);
-											let platform_color = match status {
-												Some("idle") => colors.warning,
-												Some("dnd") => colors.danger,
-												_ => colors.positive,
+											// The cosmetic nameplate paints a wide banner under
+											// this cluster, so a dark chip keeps the crown,
+											// staff tag and platform icons readable on it.
+											let cluster = |ui: &mut egui::Ui| {
+												marks.show(ui);
+												let platform_color = match status {
+													Some("idle") => colors.warning,
+													Some("dnd") => colors.danger,
+													_ => colors.positive,
+												};
+												for platform in platforms.clone() {
+													platform.show(ui, language, platform_color);
+												}
 											};
-											for platform in platforms.clone() {
-												platform.show(ui, language, platform_color);
+											if nameplate {
+												egui::Frame::new()
+													.fill(egui::Color32::from_black_alpha(150))
+													.corner_radius(4)
+													.inner_margin(egui::Margin::symmetric(4, 2))
+													.show(ui, cluster);
+											} else {
+												cluster(ui);
 											}
 										},
 									);
