@@ -551,6 +551,13 @@ pub struct MessagingUi {
 	voice_popout_auto: bool,
 	/// Last main-window focus seen by the automatic popout; `None` before the first frame.
 	voice_focus_seen: Option<bool>,
+	/// Top-left of the monitor holding the main window, in egui points; set by the desktop so
+	/// the automatic popout lands on that monitor even when it is not the primary one.
+	pub voice_monitor_origin: Option<egui::Pos2>,
+	/// Last outer position the popout had, so a moved player reopens where the user left it.
+	voice_popout_position: Option<egui::Pos2>,
+	/// The current popout window already received its position; later frames leave it alone.
+	voice_popout_placed: bool,
 	/// Whether the other participants stay visible as a strip under the enlarged tile.
 	pub voice_focus_participants: bool,
 	/// How far the call stage's hover chrome (and tile name badges) has faded out: 0 shown.

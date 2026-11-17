@@ -208,6 +208,7 @@ impl MessagingUi {
 			.and_then(|c| c.watching.map(|user| (c.channel, user)));
 		self.automatic_popout(ctx, watching.is_some());
 		if !self.voice_popout_open {
+			self.voice_popout_placed = false;
 			return;
 		}
 		let Some((channel, streamer)) = watching else {
@@ -235,18 +236,30 @@ impl MessagingUi {
 			.with_decorations(false)
 			.with_window_level(level);
 		if self.voice_popout_auto {
-			// Opened by leaving Serein: sit at the monitor's corner without stealing focus
-			// from the app the user switched to.
+			// Opened by leaving Serein: it must not steal focus from the app the user switched to.
 			builder = builder.with_active(false);
-			if let Some(position) = Self::popout_corner(ctx) {
-				builder = builder.with_position(position);
-			}
 		}
+		// A moved player reopens where the user put it; otherwise an automatic one starts at the
+		// monitor corner. Only the first frame places the window, so dragging is not fought.
+		let placing = !self.voice_popout_placed;
+		if placing
+			&& let Some(position) = self.voice_popout_position.or_else(|| {
+				self.voice_popout_auto
+					.then(|| self.popout_corner(ctx))
+					.flatten()
+			}) {
+			builder = builder.with_position(position);
+		}
+		self.voice_popout_placed = true;
 		ctx.show_viewport_immediate(viewport_id, builder, |ui, class| {
 			// A backend without multi-viewport support keeps the PiP fallback instead.
 			if class == egui::ViewportClass::EmbeddedWindow {
 				open = false;
 				return;
+			}
+			// Remember where the user puts the window for the next time it opens.
+			if !placing && let Some(rect) = ui.input(|input| input.viewport().outer_rect) {
+				self.voice_popout_position = Some(rect.min);
 			}
 			egui::CentralPanel::default()
 				.frame(egui::Frame::NONE.fill(egui::Color32::BLACK))
@@ -380,17 +393,20 @@ impl MessagingUi {
 		}
 	}
 
-	/// Bottom-right corner of this monitor in points, as far as egui reports it.
-	fn popout_corner(ctx: &egui::Context) -> Option<egui::Pos2> {
+	/// Bottom-right corner of the main window's monitor in points. The desktop supplies the
+	/// monitor origin, so a secondary display places the popout on that same screen.
+	fn popout_corner(&self, ctx: &egui::Context) -> Option<egui::Pos2> {
 		ctx.input(|input| {
 			let monitor = input.viewport().monitor_size?;
 			(monitor.x >= POPOUT_SIZE.x + 2.0 * POPOUT_MARGIN
 				&& monitor.y >= POPOUT_SIZE.y + 2.0 * POPOUT_MARGIN)
 				.then(|| {
-					egui::pos2(
-						monitor.x - POPOUT_SIZE.x - POPOUT_MARGIN,
-						monitor.y - POPOUT_SIZE.y - POPOUT_MARGIN,
-					)
+					let origin = self.voice_monitor_origin.unwrap_or(egui::Pos2::ZERO);
+					origin
+						+ egui::vec2(
+							monitor.x - POPOUT_SIZE.x - POPOUT_MARGIN,
+							monitor.y - POPOUT_SIZE.y - POPOUT_MARGIN,
+						)
 				})
 		})
 	}

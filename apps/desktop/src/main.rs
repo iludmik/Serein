@@ -6725,6 +6725,11 @@ impl eframe::App for Desktop {
 			if self.app_settings.state.failed {
 				self.messaging.notification_sound_status = "Could not save device notification settings. Changes apply only until restart.";
 			}
+			self.messaging.voice_monitor_origin = self.window.current_monitor().map(|monitor| {
+				let scale = ctx.pixels_per_point();
+				let origin = monitor.position();
+				egui::pos2(origin.x as f32 / scale, origin.y as f32 / scale)
+			});
 			let mut commands = self.messaging.show(ui, &mut self.state);
 			self.extensions.cancel_stale_message_events(&self.state);
 			self.choose_interaction_files(&ctx);
