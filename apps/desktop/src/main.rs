@@ -1086,6 +1086,12 @@ struct Desktop {
 	cache_clears: cache::HistoryClears,
 	cache_error: bool,
 	cache_status: &'static str,
+	radar_watch_load_pending: bool,
+	radar_log_load_pending: bool,
+	radar_watch_save_pending: bool,
+	radar_log_save_pending: bool,
+	/// The activity log is rewritten whole, so saves are debounced.
+	radar_log_save_due: Option<std::time::Instant>,
 	appearance: egui::ThemePreference,
 	appearance_changed: bool,
 	transparency_available: bool,
@@ -2607,6 +2613,11 @@ impl Desktop {
 			cache_clears: Default::default(),
 			cache_error: false,
 			cache_status: "Loading local appearance…",
+			radar_watch_load_pending: false,
+			radar_log_load_pending: false,
+			radar_watch_save_pending: false,
+			radar_log_save_pending: false,
+			radar_log_save_due: None,
 			appearance: egui::ThemePreference::System,
 			appearance_changed: false,
 			transparency_available,
@@ -5153,6 +5164,49 @@ impl Desktop {
 						"Could not save channel preferences."
 					};
 				}
+				cache::Outcome::RadarWatch(result) => {
+					self.radar_watch_load_pending = false;
+					match result {
+						Ok(watch) => self.state.radar.restore_watch(watch),
+						Err(local_store::StoreError::Incompatible) => {
+							self.state.radar.restore_watch(model::WatchData::default());
+						}
+						Err(_) => {
+							self.state.radar.restore_watch(model::WatchData::default());
+							self.cache_error = true;
+							self.cache_status = "Could not read the watchlist from local storage.";
+						}
+					}
+				}
+				cache::Outcome::RadarWatchSaved(result) => {
+					self.radar_watch_save_pending = false;
+					if result.is_err() && !self.cache_error {
+						self.cache_error = true;
+						self.cache_status = "Could not save the watchlist.";
+					}
+				}
+				cache::Outcome::RadarLog(result) => {
+					self.radar_log_load_pending = false;
+					match result {
+						Ok(log) => self.state.radar.restore_log(log),
+						Err(local_store::StoreError::Incompatible) => {
+							self.state.radar.restore_log(model::RadarLog::default());
+						}
+						Err(_) => {
+							self.state.radar.restore_log(model::RadarLog::default());
+							self.cache_error = true;
+							self.cache_status =
+								"Could not read the activity log from local storage.";
+						}
+					}
+				}
+				cache::Outcome::RadarLogSaved(result) => {
+					self.radar_log_save_pending = false;
+					if result.is_err() && !self.cache_error {
+						self.cache_error = true;
+						self.cache_status = "Could not save the activity log.";
+					}
+				}
 				cache::Outcome::GifFavorites(favorites) => {
 					self.state.restore_gif_favorites(favorites);
 				}
@@ -6291,6 +6345,11 @@ impl eframe::App for Desktop {
 				}
 			}
 		}
+		// Radar notifications ride the same OS path as message alerts.
+		while let Some(notice) = self.state.radar.take_notice() {
+			self.notifications
+				.notify_message(notice.title, notice.body, None);
+		}
 		self.messaging.voice_ptt_active = self.messaging.voice_push_to_talk
 			&& self.state.voice.active.is_some()
 			&& (self.messaging.push_to_talk_down(ctx) || self.hotkeys.push_to_talk_down());
@@ -7322,6 +7381,48 @@ impl eframe::App for Desktop {
 			self.variant_changed = true;
 			let key = (variant != ui::design::Variant::Standard).then(|| variant.key().to_owned());
 			self.queue_cache_for(model::Id(0), cache::Operation::SaveThemeVariant(key));
+		}
+		// Radar watchlist and activity log: load once per session, then persist changes.
+		// The log blob is rewritten whole, so its saves are debounced.
+		let radar_account = self.state.user.as_ref().map(|user| user.id);
+		if let Some(account) = radar_account
+			&& !self.fixture_only
+			&& !self.state.demo
+		{
+			if !self.state.radar.watch_loaded() && !self.radar_watch_load_pending {
+				self.radar_watch_load_pending =
+					self.queue_cache_for(account, cache::Operation::LoadRadarWatch);
+			}
+			if !self.state.radar.log_loaded() && !self.radar_log_load_pending {
+				self.radar_log_load_pending =
+					self.queue_cache_for(account, cache::Operation::LoadRadarLog);
+			}
+			if self.state.radar.watch_dirty && !self.radar_watch_save_pending {
+				self.state.radar.watch_dirty = false;
+				self.radar_watch_save_pending = self.queue_cache_for(
+					account,
+					cache::Operation::SaveRadarWatch(self.state.radar.watch.clone()),
+				);
+				if !self.radar_watch_save_pending {
+					self.state.radar.watch_dirty = true;
+				}
+			}
+			if self.state.radar.log_dirty && !self.radar_log_save_pending {
+				let due = *self.radar_log_save_due.get_or_insert_with(|| {
+					std::time::Instant::now() + std::time::Duration::from_secs(5)
+				});
+				if std::time::Instant::now() >= due {
+					self.radar_log_save_due = None;
+					self.state.radar.log_dirty = false;
+					self.radar_log_save_pending = self.queue_cache_for(
+						account,
+						cache::Operation::SaveRadarLog(self.state.radar.log.clone()),
+					);
+					if !self.radar_log_save_pending {
+						self.state.radar.log_dirty = true;
+					}
+				}
+			}
 		}
 		let switch = self.messaging.switch_account_requested.take();
 		let add = std::mem::take(&mut self.messaging.add_account_requested);

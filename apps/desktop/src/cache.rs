@@ -70,6 +70,10 @@ pub enum Operation {
 	SaveGifFavorites(Vec<model::Gif>),
 	LoadChannelPreferences,
 	SaveChannelPreferences(model::ChannelPreferences),
+	LoadRadarWatch,
+	SaveRadarWatch(model::WatchData),
+	LoadRadarLog,
+	SaveRadarLog(model::RadarLog),
 	LoadAccountPresences,
 	SaveAccountPresence(model::OwnPresence),
 	LoadAccounts,
@@ -121,6 +125,10 @@ pub enum Outcome {
 	GifFavorites(Vec<model::Gif>),
 	ChannelPreferences(Result<model::ChannelPreferences, StoreError>),
 	ChannelPreferencesSaved(Result<(), StoreError>),
+	RadarWatch(Result<model::WatchData, StoreError>),
+	RadarWatchSaved(Result<(), StoreError>),
+	RadarLog(Result<model::RadarLog, StoreError>),
+	RadarLogSaved(Result<(), StoreError>),
 	AccountPresences(Result<std::collections::BTreeMap<model::Id, model::OwnPresence>, StoreError>),
 	AccountPresenceSaved(Result<(), StoreError>),
 	/// The whole switcher roster, plus any accounts pruned to keep it bounded. Pruning is
@@ -239,6 +247,12 @@ impl Cache {
 		if matches!(&operation, Operation::SaveChannelPreferences(value) if !value.is_valid()) {
 			return false;
 		}
+		if matches!(&operation, Operation::SaveRadarWatch(value) if !value.is_valid()) {
+			return false;
+		}
+		if matches!(&operation, Operation::SaveRadarLog(value) if !value.is_valid()) {
+			return false;
+		}
 		let payload = match &operation {
 			Operation::SaveCustomFont(font) => font
 				.as_ref()
@@ -282,6 +296,20 @@ impl Cache {
 						.iter()
 						.map(|binding| binding.chord.key.capacity())
 						.sum::<usize>()
+			}
+			Operation::SaveRadarWatch(value) => {
+				value
+					.entries
+					.iter()
+					.map(|entry| entry.name.as_ref().map_or(0, String::capacity))
+					.sum::<usize>() + value.entries.capacity() * size_of::<model::WatchEntry>()
+			}
+			Operation::SaveRadarLog(value) => {
+				value
+					.events
+					.iter()
+					.map(model::RadarEvent::bytes)
+					.sum::<usize>() + value.events.capacity() * size_of::<model::RadarEvent>()
 			}
 			Operation::SaveThemeVariant(value) => value.as_ref().map_or(0, String::capacity),
 			Operation::SaveAccount(account) => {
@@ -432,6 +460,30 @@ fn execute(
 				Err(error) => Err(*error),
 			});
 		}
+		Operation::LoadRadarWatch => {
+			return Outcome::RadarWatch(match store {
+				Ok(store) => store.radar_watch(account),
+				Err(error) => Err(*error),
+			});
+		}
+		Operation::SaveRadarWatch(value) => {
+			return Outcome::RadarWatchSaved(match store {
+				Ok(store) => store.save_radar_watch(account, value),
+				Err(error) => Err(*error),
+			});
+		}
+		Operation::LoadRadarLog => {
+			return Outcome::RadarLog(match store {
+				Ok(store) => store.radar_log(account),
+				Err(error) => Err(*error),
+			});
+		}
+		Operation::SaveRadarLog(value) => {
+			return Outcome::RadarLogSaved(match store {
+				Ok(store) => store.save_radar_log(account, value),
+				Err(error) => Err(*error),
+			});
+		}
 		Operation::LoadAccountPresences => {
 			return Outcome::AccountPresences(match store {
 				Ok(store) => store.account_presences(),
@@ -570,6 +622,10 @@ fn execute(
 		| Operation::SetAccountToken { .. }
 		| Operation::LoadChannelPreferences
 		| Operation::SaveChannelPreferences(_)
+		| Operation::LoadRadarWatch
+		| Operation::SaveRadarWatch(_)
+		| Operation::LoadRadarLog
+		| Operation::SaveRadarLog(_)
 		| Operation::SaveAppPreferences(_)
 		| Operation::LoadReadingPreferences
 		| Operation::SaveReadingPreferences(_)
@@ -589,6 +645,10 @@ fn execute(
 			| Operation::SetAccountToken { .. }
 			| Operation::LoadChannelPreferences
 			| Operation::SaveChannelPreferences(_)
+			| Operation::LoadRadarWatch
+			| Operation::SaveRadarWatch(_)
+			| Operation::LoadRadarLog
+			| Operation::SaveRadarLog(_)
 			| Operation::SaveAppPreferences(_)
 			| Operation::LoadReadingPreferences
 			| Operation::SaveReadingPreferences(_)

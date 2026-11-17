@@ -65,6 +65,11 @@ pub enum Action {
 		user: User,
 		kind: crate::moderation::Kind,
 	},
+	/// Adds or removes the user on the local radar watchlist.
+	Radar {
+		user: User,
+		watched: bool,
+	},
 }
 impl std::fmt::Debug for Action {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -103,6 +108,18 @@ pub(super) fn prepare(action: Action, state: &mut State) -> Option<Command> {
 				assigned,
 			},
 		),
+		Action::Radar { user, watched } => {
+			if watched {
+				state.radar.unwatch(user.id);
+			} else if state
+				.radar
+				.watch(user.id, Some(&user.name), client_core::radar::unix_ms())
+				== model::PreferenceEdit::CapacityReached
+			{
+				state.status = "The watchlist is full; remove someone before adding more";
+			}
+			None
+		}
 	}
 }
 
@@ -216,6 +233,21 @@ pub(super) fn contents(
 	{
 		profile.command_open(user.clone());
 		ui.close();
+	}
+	{
+		let watched = state.radar.watch.is_watched(user.id);
+		let label = crate::i18n::translate(if watched {
+			"radar-remove-user"
+		} else {
+			"radar-add-user"
+		});
+		if ui.button(label).clicked() {
+			*action = Some(Action::Radar {
+				user: user.clone(),
+				watched,
+			});
+			ui.close();
+		}
 	}
 	if !user.webhook
 		&& ui

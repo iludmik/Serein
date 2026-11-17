@@ -1,6 +1,7 @@
 //! Account-isolated bounded SQLite cache. This is not Discord's authoritative state.
 mod account_presence;
 mod channel_preferences;
+mod radar;
 use model::{Id, Message, ReadingPreferences, User};
 use rusqlite::{Connection, OptionalExtension, params};
 use std::{
@@ -11,8 +12,8 @@ use std::{
 
 const MAX_MEDIA_JSON: usize = 256 * 1024;
 const MAX_WINDOW_BYTES: usize = 4 * 1024 * 1024;
-const NATIVE_SCHEMA: u32 = 29;
-const READABLE_SCHEMA: u32 = 29;
+const NATIVE_SCHEMA: u32 = 30;
+const READABLE_SCHEMA: u32 = 30;
 #[derive(serde::Deserialize)]
 struct CachedMentions(#[serde(deserialize_with = "model::deserialize_mentions")] Vec<User>);
 fn parse_author_roles(raw: &str) -> std::result::Result<Vec<Id>, StoreError> {
@@ -527,6 +528,14 @@ impl LocalStore {
             CREATE TABLE IF NOT EXISTS channel_preferences(
                 account TEXT PRIMARY KEY NOT NULL,
                 value TEXT NOT NULL CHECK(typeof(value)='text' AND length(CAST(value AS BLOB))<=8192)
+            );
+            CREATE TABLE IF NOT EXISTS radar_watch(
+                account TEXT PRIMARY KEY NOT NULL,
+                value TEXT NOT NULL CHECK(typeof(value)='text' AND length(CAST(value AS BLOB))<=32768)
+            );
+            CREATE TABLE IF NOT EXISTS radar_log(
+                account TEXT PRIMARY KEY NOT NULL,
+                value TEXT NOT NULL CHECK(typeof(value)='text' AND length(CAST(value AS BLOB))<=1048576)
             );
             CREATE TABLE IF NOT EXISTS account_presence(
                 account TEXT PRIMARY KEY NOT NULL,
@@ -1675,6 +1684,8 @@ impl LocalStore {
 			"gif_favorites",
 			"channel_preferences",
 			"account_presence",
+			"radar_watch",
+			"radar_log",
 			"accounts",
 		] {
 			transaction.execute(
