@@ -47,8 +47,10 @@ pub fn vc_double_click_enabled() -> bool {
 /// Local mutes share the 64 per-user volume slots sent to the mixer.
 const MAX_USER_MUTES: usize = 64;
 
-/// Borderless stream player size and its margin from the monitor's bottom-right corner.
-const POPOUT_SIZE: egui::Vec2 = egui::vec2(640.0, 390.0);
+/// Borderless stream player width, minimum size, and its margin from the monitor's corner.
+const POPOUT_WIDTH: f32 = 640.0;
+const POPOUT_DEFAULT_HEIGHT: f32 = 360.0;
+const POPOUT_MIN: egui::Vec2 = egui::vec2(320.0, 200.0);
 const POPOUT_MARGIN: f32 = 18.0;
 
 pub(super) struct VoiceDrag(pub Id, pub Id, pub Id);
@@ -231,24 +233,32 @@ impl MessagingUi {
 		};
 		let mut builder = egui::ViewportBuilder::default()
 			.with_title(title)
-			.with_inner_size(POPOUT_SIZE)
-			.with_min_inner_size([320.0, 200.0])
+			.with_min_inner_size(POPOUT_MIN)
+			.with_resizable(true)
 			.with_decorations(false)
 			.with_window_level(level);
 		if self.voice_popout_auto {
 			// Opened by leaving Serein: it must not steal focus from the app the user switched to.
 			builder = builder.with_active(false);
 		}
-		// A moved player reopens where the user put it; otherwise an automatic one starts at the
-		// monitor corner. Only the first frame places the window, so dragging is not fought.
+		// A moved and resized player reopens the same way; otherwise an automatic one starts
+		// matched to the stream at the monitor corner. Only the first frame places the window,
+		// so dragging and resizing are never fought.
 		let placing = !self.voice_popout_placed;
-		if placing
-			&& let Some(position) = self.voice_popout_position.or_else(|| {
+		let size = self
+			.voice_popout_size
+			.filter(|size| size.x >= POPOUT_MIN.x && size.y >= POPOUT_MIN.y)
+			.or_else(|| self.stream_popout_size())
+			.unwrap_or(egui::vec2(POPOUT_WIDTH, POPOUT_DEFAULT_HEIGHT));
+		if placing {
+			builder = builder.with_inner_size(size);
+			if let Some(position) = self.voice_popout_position.or_else(|| {
 				self.voice_popout_auto
-					.then(|| self.popout_corner(ctx))
+					.then(|| self.popout_corner(ctx, size))
 					.flatten()
 			}) {
-			builder = builder.with_position(position);
+				builder = builder.with_position(position);
+			}
 		}
 		self.voice_popout_placed = true;
 		ctx.show_viewport_immediate(viewport_id, builder, |ui, class| {
@@ -257,9 +267,14 @@ impl MessagingUi {
 				open = false;
 				return;
 			}
-			// Remember where the user puts the window for the next time it opens.
-			if !placing && let Some(rect) = ui.input(|input| input.viewport().outer_rect) {
-				self.voice_popout_position = Some(rect.min);
+			// Remember where and how big the user leaves the window for the next opening.
+			if !placing {
+				if let Some(rect) = ui.input(|input| input.viewport().outer_rect) {
+					self.voice_popout_position = Some(rect.min);
+				}
+				if let Some(rect) = ui.input(|input| input.viewport().inner_rect) {
+					self.voice_popout_size = Some(rect.size());
+				}
 			}
 			egui::CentralPanel::default()
 				.frame(egui::Frame::NONE.fill(egui::Color32::BLACK))
@@ -275,8 +290,26 @@ impl MessagingUi {
 						ui.scope_id().with("popout-drag-and-context"),
 						egui::Sense::click_and_drag(),
 					);
-					if bg_response.drag_started() {
+					// Bottom-right grip resizes the borderless player; dragging elsewhere moves it.
+					let grip = ui.interact(
+						egui::Rect::from_min_size(
+							rect.right_bottom() - egui::vec2(22.0, 22.0),
+							egui::vec2(22.0, 22.0),
+						),
+						ui.scope_id().with("popout-resize"),
+						egui::Sense::drag(),
+					);
+					if bg_response.drag_started() && !grip.hovered() && !grip.dragged() {
 						ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
+					}
+					if grip.hovered() {
+						ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeNwSe);
+					}
+					if grip.dragged() {
+						// Dragging the grip grows the player from its bottom-right corner.
+						let size = (rect.size() + grip.drag_delta()).max(POPOUT_MIN);
+						ui.ctx()
+							.send_viewport_cmd(egui::ViewportCommand::InnerSize(size));
 					}
 					egui::Popup::context_menu(&bg_response)
 						.close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
@@ -395,20 +428,30 @@ impl MessagingUi {
 
 	/// Bottom-right corner of the main window's monitor in points. The desktop supplies the
 	/// monitor origin, so a secondary display places the popout on that same screen.
-	fn popout_corner(&self, ctx: &egui::Context) -> Option<egui::Pos2> {
+	fn popout_corner(&self, ctx: &egui::Context, size: egui::Vec2) -> Option<egui::Pos2> {
 		ctx.input(|input| {
 			let monitor = input.viewport().monitor_size?;
-			(monitor.x >= POPOUT_SIZE.x + 2.0 * POPOUT_MARGIN
-				&& monitor.y >= POPOUT_SIZE.y + 2.0 * POPOUT_MARGIN)
+			(monitor.x >= size.x + 2.0 * POPOUT_MARGIN && monitor.y >= size.y + 2.0 * POPOUT_MARGIN)
 				.then(|| {
 					let origin = self.voice_monitor_origin.unwrap_or(egui::Pos2::ZERO);
 					origin
 						+ egui::vec2(
-							monitor.x - POPOUT_SIZE.x - POPOUT_MARGIN,
-							monitor.y - POPOUT_SIZE.y - POPOUT_MARGIN,
+							monitor.x - size.x - POPOUT_MARGIN,
+							monitor.y - size.y - POPOUT_MARGIN,
 						)
 				})
 		})
+	}
+
+	/// The player's default size for the current picture: fixed width, height from its aspect,
+	/// so a fresh stream fills the window instead of sitting in bars.
+	fn stream_popout_size(&self) -> Option<egui::Vec2> {
+		let texture = self.voice_stream_view.as_ref()?;
+		if texture.size.x <= 0.0 || texture.size.y <= 0.0 {
+			return None;
+		}
+		let height = (POPOUT_WIDTH * texture.size.y / texture.size.x).clamp(POPOUT_MIN.y, 1200.0);
+		Some(egui::vec2(POPOUT_WIDTH, height))
 	}
 
 	/// Bottom-right in-app Picture-in-Picture floating tile when navigating away from the stream.
@@ -443,7 +486,10 @@ impl MessagingUi {
 		}
 
 		let screen = ctx.content_rect();
-		let pip_size = egui::vec2(280.0, 158.0);
+		let pip_size = self
+			.voice_pip_size
+			.unwrap_or(egui::vec2(280.0, 158.0))
+			.max(egui::vec2(200.0, 112.0));
 		let pip_margin = egui::vec2(18.0, 18.0);
 		let pip_rect =
 			egui::Rect::from_min_size(screen.right_bottom() - pip_size - pip_margin, pip_size);
@@ -453,6 +499,22 @@ impl MessagingUi {
 			.fixed_pos(pip_rect.min)
 			.show(ctx, |ui| {
 				let (rect, response) = ui.allocate_exact_size(pip_size, egui::Sense::click());
+				// Bottom-right grip grows the floating player; the size is remembered.
+				let grip = ui.interact(
+					egui::Rect::from_min_size(
+						rect.right_bottom() - egui::vec2(18.0, 18.0),
+						egui::vec2(18.0, 18.0),
+					),
+					ui.scope_id().with("voice-pip-resize"),
+					egui::Sense::drag(),
+				);
+				if grip.hovered() {
+					ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeNwSe);
+				}
+				if grip.dragged() {
+					self.voice_pip_size =
+						Some((rect.size() + grip.drag_delta()).max(egui::vec2(200.0, 112.0)));
+				}
 				ui.painter().rect_filled(rect, 8, STAGE_FILL);
 				ui.painter().rect_stroke(
 					rect,
@@ -2074,12 +2136,19 @@ impl MessagingUi {
 			.map_or_else(|| "Participant".to_owned(), |user| user.name.clone());
 		let content = match &self.voice_stream_view {
 			Some(texture) => {
-				let content = fit_rect(rect, texture.size);
-				ui.put(
-					content,
-					egui::Image::from_texture((texture.id, content.size())).corner_radius(8),
-				);
-				content
+				// Grid tiles fill the whole box, cropping overflow like Discord's stage does;
+				// the fullscreen surface keeps the whole picture letterboxed instead.
+				if overlay {
+					let content = fit_rect(rect, texture.size);
+					ui.put(
+						content,
+						egui::Image::from_texture((texture.id, content.size())).corner_radius(8),
+					);
+					content
+				} else {
+					cover_image(ui, rect, texture.id, texture.size, false);
+					rect
+				}
 			}
 			None => {
 				ui.painter().rect_filled(rect, 8, TILE_FILL);

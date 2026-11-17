@@ -556,6 +556,10 @@ pub struct MessagingUi {
 	pub voice_monitor_origin: Option<egui::Pos2>,
 	/// Last outer position the popout had, so a moved player reopens where the user left it.
 	voice_popout_position: Option<egui::Pos2>,
+	/// Last inner size the popout had, so a resized player reopens at the same size.
+	voice_popout_size: Option<egui::Vec2>,
+	/// Last size the floating in-app player was resized to by its grip.
+	voice_pip_size: Option<egui::Vec2>,
 	/// The current popout window already received its position; later frames leave it alone.
 	voice_popout_placed: bool,
 	/// Whether the other participants stay visible as a strip under the enlarged tile.
