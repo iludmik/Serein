@@ -1783,6 +1783,23 @@ impl MessagingUi {
 			})
 	}
 
+	/// Grid tile aspect: a lone watched stream shapes the tiles to its picture, so the stage
+	/// shows all of it without bars or cropped edges; any other video mix keeps the 16:9 grid.
+	fn stage_aspect(&self, state: &State, channel: Id, tiles: &[Tile<'_>]) -> f32 {
+		let mut videos = tiles
+			.iter()
+			.filter(|tile| self.tile_has_video(state, channel, tile));
+		match (videos.next(), videos.next()) {
+			(Some(Tile::Stream(_)), None) => self
+				.voice_stream_view
+				.as_ref()
+				.filter(|texture| texture.size.x > 0.0 && texture.size.y > 0.0)
+				.map(|texture| (texture.size.x / texture.size.y).clamp(0.5, 3.0))
+				.unwrap_or(16.0 / 9.0),
+			_ => 16.0 / 9.0,
+		}
+	}
+
 	/// Stage tiles: a best-fit grid, or one enlarged video with the rest in a strip below.
 	///
 	/// `dm` drops the tile plates while no one shares video, matching Discord's
@@ -1834,13 +1851,23 @@ impl MessagingUi {
 			} else {
 				0.0
 			};
-			let main = egui::Rect::from_min_size(
+			let full = egui::Rect::from_min_size(
 				area.min,
 				egui::vec2(
 					area.width(),
 					area.height() - strip - if strip > 0.0 { TILE_GAP } else { 0.0 },
 				),
 			);
+			// An enlarged watched stream keeps the picture's shape inside the stage, showing
+			// all of it instead of cropping to fill.
+			let main = match &tiles[index] {
+				Tile::Stream(_) if self.tile_has_video(state, channel, &tiles[index]) => self
+					.voice_stream_view
+					.as_ref()
+					.map(|texture| fit_rect(full, texture.size))
+					.unwrap_or(full),
+				_ => full,
+			};
 			toggle = self.tile(ui, state, channel, &tiles[index], main, false, true);
 			if strip > 0.0 {
 				// Narrow stages show as many square-or-wider tiles as fit, never clipped ones.
@@ -1851,7 +1878,7 @@ impl MessagingUi {
 				let size = egui::vec2(width, strip);
 				let row = size.x * shown as f32 + TILE_GAP * (shown as f32 - 1.0);
 				let mut x = area.center().x - row * 0.5;
-				let top = main.bottom() + TILE_GAP;
+				let top = full.bottom() + TILE_GAP;
 				for (_, tile) in tiles
 					.iter()
 					.enumerate()
@@ -1869,10 +1896,11 @@ impl MessagingUi {
 			// Pick the column count that makes the tiles largest inside the stage, so two
 			// participants fill the width instead of sitting in a corner. Frameless DM avatars
 			// instead keep Discord's tight spacing and shrink to fit a short panel.
+			let aspect = self.stage_aspect(state, channel, &tiles);
 			let (columns, size) = if frameless {
 				frameless_fit(tiles.len(), area.size())
 			} else {
-				best_fit(tiles.len(), area.size(), 620.0)
+				best_fit(tiles.len(), area.size(), 620.0, aspect)
 			};
 			if size.x < 24.0 || size.y < 24.0 {
 				return;
@@ -5209,8 +5237,8 @@ fn frameless_fit(count: usize, area: egui::Vec2) -> (usize, egui::Vec2) {
 	}
 }
 
-/// Column count and tile size that make the tiles largest inside `area`, at 16:9.
-fn best_fit(count: usize, area: egui::Vec2, cap: f32) -> (usize, egui::Vec2) {
+/// Column count and tile size that make the tiles largest inside `area`, at `aspect`.
+fn best_fit(count: usize, area: egui::Vec2, cap: f32, aspect: f32) -> (usize, egui::Vec2) {
 	let mut best = (1, egui::Vec2::ZERO);
 	for columns in 1..=count.max(1) {
 		let rows = count.div_ceil(columns);
@@ -5219,10 +5247,10 @@ fn best_fit(count: usize, area: egui::Vec2, cap: f32) -> (usize, egui::Vec2) {
 		if width <= 0.0 || height <= 0.0 {
 			continue;
 		}
-		let width = width.min(height * 16.0 / 9.0).min(cap);
+		let width = width.min(height * aspect).min(cap);
 		// Prefer side-by-side tiles when the size cap makes multiple layouts tie.
 		if width >= best.1.x {
-			best = (columns, egui::vec2(width, width * 9.0 / 16.0));
+			best = (columns, egui::vec2(width, width / aspect));
 		}
 	}
 	if best.1.x <= 0.0 {
