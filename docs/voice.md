@@ -296,6 +296,28 @@ Use the existing opt-in diagnostics on a deliberate failed attempt to distinguis
 capture stalls, decoder failures, loss and transport timing before changing those
 policies. No automatic capture, account test or diagnostic logging was added.
 
+## Stalled DAVE group negotiation (November 18, 2026)
+
+Watching a private DM call uses a separate RTC media session whose MLS group
+re-keys whenever the streamer's client commits. When no accepted commit or
+welcome arrived in a negotiation window, the call or stream previously failed
+with the group negotiation timeout even though the signaling transport was
+healthy. That window now ends with exactly one replacement DAVE key package
+(opcode 26) and a fresh 30-second window; only a second silent window fails
+with the existing error. A stalled transition execution still fails
+immediately, and the resume deadline is unchanged.
+
+Sole-member waiting no longer reinitializes an established, still-valid MLS
+group: the group's keys survive a peer's departure so a re-announced peer can
+commit or resume without a full renegotiation. Waiting ends when the peer is
+re-announced; a group that fails validation is still rebuilt through the
+existing recovery budget.
+
+Synthetic tests cover the single replacement package before the negotiation
+timeout (call and stream loops) and preserved-group sole-member waiting. Live
+behavior against Discord's streamer-side re-key races still requires the
+owner-operated live gate.
+
 ## Diagnosing a call that never opens audio
 
 Windows call playback uses the selected speaker's default shared-mode mix format,

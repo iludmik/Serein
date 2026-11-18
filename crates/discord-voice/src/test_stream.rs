@@ -104,9 +104,9 @@ async fn local_stream_sender_and_viewer_deliver_audio_and_video() {
 
 #[tokio::test]
 async fn established_streams_bound_missing_rekey_execution_and_welcome() {
-	timeout(Duration::from_secs(45), exchange(true))
+	timeout(Duration::from_secs(90), exchange(true))
 		.await
-		.expect("Stream rekey must time out while signaling remains healthy");
+		.expect("Stream rekey must time out after one replacement key package");
 }
 
 async fn exchange(rekey_timeout: bool) {
@@ -400,7 +400,9 @@ async fn exchange(rekey_timeout: bool) {
 	assert_eq!(picture.unwrap(), (1, 320, 240, 320 * 240 * 3 / 2));
 	if rekey_timeout {
 		// Both have cleared their initial negotiation deadline. Keep acknowledging
-		// heartbeats, but withhold the sender's Execute and viewer's new Welcome.
+		// heartbeats, but withhold the sender's Execute and viewer's new Welcome:
+		// the sender's stalled transition is fatal, while the viewer's missing
+		// welcome first earns a replacement key package and a fresh window.
 		event(
 			&mut send_ws,
 			json!({"op":21,"d":{"protocol_version":1,"transition_id":7}}),
@@ -424,6 +426,7 @@ async fn exchange(rekey_timeout: bool) {
 		}
 		let mut sender_done = false;
 		let mut viewer_done = false;
+		let mut replacement_packages = 0;
 		while !sender_done || !viewer_done {
 			tokio::select! {
 				result = &mut sender, if !sender_done => {
@@ -433,6 +436,9 @@ async fn exchange(rekey_timeout: bool) {
 				result = &mut viewer, if !viewer_done => {
 					assert_eq!(result.unwrap(), Err("Discord DAVE group negotiation timed out; no accepted commit or welcome was received"));
 					viewer_done = true;
+					// The first silent window must have produced exactly one
+					// replacement key package; the second window is what failed.
+					assert_eq!(replacement_packages, 1, "viewer must resend its key package once before failing");
 				},
 				frame = send_ws.next(), if !sender_done => {
 					if let Some(Ok(Message::Text(text))) = frame {
@@ -442,10 +448,19 @@ async fn exchange(rekey_timeout: bool) {
 					}
 				},
 				frame = view_ws.next(), if !viewer_done => {
-					if let Some(Ok(Message::Text(text))) = frame {
-						let value: Value = serde_json::from_str(&text).unwrap();
-						assert_eq!(value["op"], 3);
-						event(&mut view_ws, json!({"op":6,"d":{"t":value["d"]["t"]}})).await;
+					if let Some(Ok(frame)) = frame {
+						match frame {
+							Message::Text(text) => {
+								let value: Value = serde_json::from_str(&text).unwrap();
+								assert_eq!(value["op"], 3);
+								event(&mut view_ws, json!({"op":6,"d":{"t":value["d"]["t"]}})).await;
+							}
+							Message::Binary(package) => {
+								assert_eq!(package[0], 26);
+								replacement_packages += 1;
+							}
+							_ => {}
+						}
 					}
 				},
 			}

@@ -532,9 +532,11 @@ impl Dave {
 		if changed {
 			self.participants = next;
 			self.announced = announced;
+			// A re-announced peer ends sole-member waiting even on an established
+			// group; callers restore `ready` while the session stays ready.
+			self.waiting = false;
 			if !self.session.is_ready() {
 				self.ready = false;
-				self.waiting = false;
 			}
 		}
 		Ok(changed)
@@ -557,10 +559,10 @@ impl Dave {
 		}
 		Ok(changed)
 	}
-	/// Epoch zero has no media ratchets in Davey. Remain joined without opening audio devices.
+	/// Remain joined without opening audio devices while nobody can negotiate.
 	pub fn wait_for_peer(&mut self) -> Result<(), &'static str> {
 		self.validate_group()?;
-		if !self.alone() || self.session.epoch().is_none_or(|epoch| epoch.as_u64() != 0) {
+		if !self.alone() {
 			return Err("Unexpected sole-member DAVE transition");
 		}
 		self.pending = None;
@@ -569,15 +571,14 @@ impl Dave {
 		self.waiting = true;
 		Ok(())
 	}
-	/// Safely transition a sole member into waiting mode, reinitializing the group
-	/// if it still contains departed peers or has advanced beyond epoch zero.
+	/// Safely transition a sole member into waiting mode, keeping the established
+	/// group when it still validates. Reinitializing an established group would
+	/// discard the keys a returning peer needs to commit or send a welcome.
 	pub fn enter_sole_member_waiting(&mut self) -> Result<(), &'static str> {
 		if !self.alone() {
 			return Err("Cannot enter sole member waiting with peers announced");
 		}
-		if self.session.epoch().is_none_or(|epoch| epoch.as_u64() != 0)
-			|| self.validate_group().is_err()
-		{
+		if self.validate_group().is_err() {
 			self.reinitialize()?;
 		}
 		self.wait_for_peer()
@@ -1188,9 +1189,20 @@ mod tests {
 		assert!(alice.alone());
 		assert!(alice.should_wait_for_peer());
 
-		// enter_sole_member_waiting reinitializes the epoch > 0 group and enters waiting cleanly.
+		// Waiting preserves the established group instead of reinitializing it:
+		// the returning peer still shares the group's keys.
 		alice.enter_sole_member_waiting().unwrap();
 		assert!(alice.waiting);
 		assert!(!alice.ready);
+		assert!(alice.session.is_ready());
+		assert!(alice.is_group_member(2));
+
+		// A re-announced peer clears waiting; the ready caller restores readiness
+		// because the established session never left the ready state.
+		assert!(alice.connect(&[2]).unwrap());
+		assert!(!alice.waiting);
+		assert!(alice.session.is_ready());
+		alice.ready = alice.ready || alice.session.is_ready();
+		assert!(alice.ready);
 	}
 }
