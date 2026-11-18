@@ -1826,13 +1826,8 @@ fn queue_stream_action(
 		}
 		return Some("Voice signaling is disconnected; screen-share action was not sent");
 	}
-	let control = if stop {
-		pending.take().unwrap_or(control)
-	} else {
-		control
-	};
-	if !stop
-		&& let Some(held) = pending.take()
+	// A stop held during the outage goes first: Discord may still be streaming it.
+	if let Some(held) = pending.take()
 		&& let Err(mpsc::error::TrySendError::Full(held)) = sender.try_send(held)
 	{
 		*pending = Some(held);
@@ -2847,6 +2842,34 @@ mod tests {
 			receiver.try_recv(),
 			Ok(V::StartStream {
 				stream_request: 9,
+				..
+			})
+		));
+		// A stop held during the outage reaches Discord before the newer stop.
+		let mut pending = None;
+		let older = V::StopStream {
+			channel,
+			request: 5,
+			stream_request: 10,
+		};
+		let newer = V::StopStream {
+			channel,
+			request: 5,
+			stream_request: 11,
+		};
+		assert!(queue_stream_action(&sender, &mut pending, older, false).is_none());
+		assert!(queue_stream_action(&sender, &mut pending, newer, true).is_none());
+		assert!(matches!(
+			receiver.try_recv(),
+			Ok(V::StopStream {
+				stream_request: 10,
+				..
+			})
+		));
+		assert!(matches!(
+			receiver.try_recv(),
+			Ok(V::StopStream {
+				stream_request: 11,
 				..
 			})
 		));
