@@ -593,6 +593,14 @@ impl ClientState {
 			&& self.has_voice_access(channel)
 			&& self.permission(channel, model::permissions::STREAM) == Some(true)
 	}
+	/// Whether an already-established local screen share remains permitted to capture media.
+	/// New shares must still use `can_stream`, which also requires a live Gateway.
+	pub fn has_stream_access(&self, channel: Id) -> bool {
+		!self.demo
+			&& self.auth == AuthState::Authenticated
+			&& self.has_voice_access(channel)
+			&& self.permission(channel, model::permissions::STREAM) == Some(true)
+	}
 	pub fn start_call(&mut self, channel: Id, ring: bool) -> Option<crate::Command> {
 		self.start_call_with_mute(channel, ring, false, false)
 	}
