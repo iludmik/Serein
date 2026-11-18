@@ -1027,10 +1027,75 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 					}),
 					..Default::default()
 				}];
+				// Synthetic X and TikTok video cards: the post link names the video.
+				let mut x = test_support::message(605, channel);
+				x.content = "https://x.com/SereinApp/status/1891234567890123456".into();
+				x.attachments.clear();
+				x.reactions = Some(vec![]);
+				x.embeds =
+					vec![model::Embed {
+					kind: "rich".into(),
+					title: Some("A short clip posted on X".into()),
+					url: Some(x.content.clone()),
+					provider: Some(model::EmbedAuthor {
+						name: "X".into(),
+						url: Some("https://x.com/".into()),
+						..Default::default()
+					}),
+					thumbnail: Some(model::EmbedMedia {
+						url: Some("https://pbs.twimg.com/amplify_video_thumb/synthetic/img/synthetic.jpg".into()),
+						width: 480,
+						height: 854,
+						..Default::default()
+					}),
+					video: Some(model::EmbedMedia {
+						url: Some("https://video.twimg.com/ext_tw_video/1/pu/vid/1280x720/synthetic.mp4".into()),
+						width: 1280,
+						height: 720,
+						..Default::default()
+					}),
+					..Default::default()
+				}];
+				let mut tiktok = test_support::message(606, channel);
+				tiktok.content = "https://www.tiktok.com/@serein/video/7412345678901234567".into();
+				tiktok.attachments.clear();
+				tiktok.reactions = Some(vec![]);
+				tiktok.embeds = vec![model::Embed {
+					kind: "rich".into(),
+					title: Some("A short clip posted on TikTok".into()),
+					url: Some(tiktok.content.clone()),
+					provider: Some(model::EmbedAuthor {
+						name: "TikTok".into(),
+						url: Some("https://www.tiktok.com/".into()),
+						..Default::default()
+					}),
+					thumbnail: Some(model::EmbedMedia {
+						url: Some(
+							"https://p16-sign.tiktokcdn-us.com/synthetic/synthetic.jpg".into(),
+						),
+						width: 480,
+						height: 854,
+						..Default::default()
+					}),
+					video: Some(model::EmbedMedia {
+						url: Some("https://v16-webapp.tiktok.com/synthetic/clip.mp4".into()),
+						width: 576,
+						height: 1024,
+						..Default::default()
+					}),
+					..Default::default()
+				}];
 				state.timeline.clear();
 				state
 					.timeline
-					.seed_cache(messages.into_iter().chain(std::iter::once(clip)).collect())
+					.seed_cache(
+						messages
+							.into_iter()
+							.chain(std::iter::once(clip))
+							.chain(std::iter::once(x))
+							.chain(std::iter::once(tiktok))
+							.collect(),
+					)
 					.expect("valid synthetic embeds");
 			}
 			if page == "markdown" {

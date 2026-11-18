@@ -191,8 +191,99 @@ pub(crate) fn native_video(embed: &Embed) -> Option<model::Attachment> {
 	})
 }
 
-/// YouTube/Vimeo embeds, rebuilt as a fixed provider player URL from a validated id.
+/// Provider embeds, rebuilt as a fixed player URL from a validated provider id.
 pub(crate) fn provider_video(embed: &Embed) -> Option<crate::video::WebVideo> {
+	post_provider_video(embed).or_else(|| media_provider_video(embed))
+}
+
+/// X (Twitter) and TikTok embeds, rebuilt from the post link's own id.
+/// The provider's official embed page is the only destination; the id is digits only.
+fn post_provider_video(embed: &Embed) -> Option<crate::video::WebVideo> {
+	// Only a video card becomes a player; a plain link preview keeps its own poster.
+	if embed.video.is_none() && !matches!(embed.kind.as_str(), "video" | "gifv") {
+		return None;
+	}
+	// Discord puts the post link in the card URL, but some cards carry it in the video
+	// field instead; either one may name the post, and both are validated the same way.
+	let sources = [
+		embed.url.as_deref(),
+		embed.video.as_ref().and_then(|video| video.url.as_deref()),
+	];
+	for source in sources.into_iter().flatten() {
+		if let Some((player, provider)) = post_player(source) {
+			return Some(web_video(embed, embed.video.as_ref(), player, provider));
+		}
+	}
+	None
+}
+
+/// The official player URL for an X or TikTok post link, if that link names a post.
+fn post_player(source: &str) -> Option<(String, &'static str)> {
+	let url = url::Url::parse(source).ok()?;
+	if url.scheme() != "https" || !url.username().is_empty() || url.password().is_some() {
+		return None;
+	}
+	let segments = url.path_segments()?.collect::<Vec<_>>();
+	match url.host_str()? {
+		"x.com" | "www.x.com" | "twitter.com" | "www.twitter.com" | "mobile.twitter.com" => {
+			let id = x_post_id(&segments)?;
+			Some((
+				format!("https://platform.twitter.com/embed/Tweet.html?id={id}"),
+				"X",
+			))
+		}
+		"tiktok.com" | "www.tiktok.com" | "m.tiktok.com" => {
+			let id = tiktok_post_id(&segments)?;
+			Some((format!("https://www.tiktok.com/embed/v2/{id}"), "TikTok"))
+		}
+		_ => None,
+	}
+}
+
+/// The post id of an X link: the digits after `/status/`, behind its account name.
+fn x_post_id<'a>(segments: &[&'a str]) -> Option<&'a str> {
+	let at = segments.iter().position(|segment| *segment == "status")?;
+	let account = segments.get(at.checked_sub(1)?)?;
+	// A handle is letters, digits and underscores; `/i/web/status/` names no account,
+	// and `/status/` alone names no post at all.
+	let named = account.len() <= 20
+		&& account
+			.bytes()
+			.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_');
+	if !named {
+		return None;
+	}
+	provider_id(segments.get(at + 1)?)
+}
+
+/// The video id of a TikTok link: the digits after `/video/` or `/photo/`, or the
+/// id in TikTok's own `/embed/v2/` address.
+fn tiktok_post_id<'a>(segments: &[&'a str]) -> Option<&'a str> {
+	if let Some(at) = segments.iter().position(|segment| *segment == "embed")
+		&& segments.get(at + 1) == Some(&"v2")
+	{
+		return provider_id(segments.get(at + 2)?);
+	}
+	["video", "photo"].into_iter().find_map(|marker| {
+		let at = segments.iter().position(|segment| *segment == marker)?;
+		let account = segments.get(at.checked_sub(1)?)?;
+		let named = account.starts_with('@')
+			&& account.len() <= 30
+			&& account[1..]
+				.bytes()
+				.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'.');
+		named.then(|| provider_id(segments.get(at + 1)?))?
+	})
+}
+
+/// A provider id is a short run of decimal digits and nothing else.
+fn provider_id(value: &str) -> Option<&str> {
+	(!value.is_empty() && value.len() <= 25 && value.bytes().all(|byte| byte.is_ascii_digit()))
+		.then_some(value)
+}
+
+/// YouTube and Vimeo embeds, rebuilt from the provider URL Discord put in the card.
+fn media_provider_video(embed: &Embed) -> Option<crate::video::WebVideo> {
 	let video = embed.video.as_ref()?;
 	let source = url::Url::parse(video.url.as_deref()?).ok()?;
 	if source.scheme() != "https" || !source.username().is_empty() || source.password().is_some() {
@@ -243,22 +334,35 @@ pub(crate) fn provider_video(embed: &Embed) -> Option<crate::video::WebVideo> {
 		}
 		_ => return None,
 	};
-	let (width, height) = if video.width > 0 && video.height > 0 {
-		(video.width, video.height)
-	} else {
-		embed
-			.thumbnail
-			.as_ref()
-			.map_or((0, 0), |p| (p.width, p.height))
-	};
-	Some(crate::video::WebVideo {
+	Some(web_video(embed, Some(video), player, provider))
+}
+
+/// The player stage of a provider embed, sized from the card's own media.
+fn web_video(
+	embed: &Embed,
+	video: Option<&model::EmbedMedia>,
+	player: String,
+	provider: &str,
+) -> crate::video::WebVideo {
+	let (width, height) = video
+		.filter(|video| video.width > 0 && video.height > 0)
+		.map_or_else(
+			|| {
+				embed
+					.thumbnail
+					.as_ref()
+					.map_or((0, 0), |poster| (poster.width, poster.height))
+			},
+			|video| (video.width, video.height),
+		);
+	crate::video::WebVideo {
 		player,
 		page: embed.url.as_deref().and_then(external_url),
 		title: embed.title.clone().unwrap_or_default(),
 		provider: provider.into(),
 		width,
 		height,
-	})
+	}
 }
 
 fn inline_image(embed: &Embed) -> Option<&model::EmbedMedia> {
@@ -1596,7 +1700,17 @@ mod tests {
 		let clip = native_video(&x).unwrap();
 		assert!(clip.is_video() && crate::video::is_embedded(&clip));
 		assert!(provider_video(&x).is_none());
-		for (embed, web) in [(youtube, true), (x, false)] {
+		// The same post without Discord's proxy is a provider card, not a native clip.
+		let mut x_post = youtube.clone();
+		x_post.url = Some("https://x.com/SereinApp/status/1891234567890123456".into());
+		x_post.video = Some(model::EmbedMedia {
+			url: Some("https://video.twimg.com/ext_tw_video/1/pu/vid/1280x720/a.mp4?tag=12".into()),
+			width: 1280,
+			height: 720,
+			..Default::default()
+		});
+		assert!(native_video(&x_post).is_none());
+		for (embed, web) in [(youtube, true), (x, false), (x_post, true)] {
 			let mut without_poster = embed.clone();
 			without_poster.thumbnail = None;
 			assert_eq!(
@@ -1654,6 +1768,101 @@ mod tests {
 					matches!(video.command, Some(crate::video::VideoCommand::Play(ref a)) if *a == clip)
 				);
 			}
+		}
+	}
+
+	/// X and TikTok cards carry a provider video, not a Discord-proxied clip, so they play in
+	/// the same provider player as YouTube instead of opening the browser.
+	#[test]
+	fn x_and_tiktok_posts_rebuild_the_official_provider_player() {
+		let post = |url: &str, video: &str| Embed {
+			kind: "rich".into(),
+			title: Some("A short clip".into()),
+			url: Some(url.into()),
+			thumbnail: Some(model::EmbedMedia {
+				url: Some("https://cdn.discordapp.com/embed/poster.png".into()),
+				width: 480,
+				height: 854,
+				..Default::default()
+			}),
+			video: Some(model::EmbedMedia {
+				url: Some(video.into()),
+				width: 576,
+				height: 1024,
+				..Default::default()
+			}),
+			..Default::default()
+		};
+		let x = post(
+			"https://x.com/SereinApp/status/1891234567890123456",
+			"https://video.twimg.com/ext_tw_video/1/pu/vid/1280x720/a.mp4?tag=12",
+		);
+		// Discord's own proxy is absent, so the native player cannot take this card.
+		assert!(native_video(&x).is_none());
+		let web = provider_video(&x).unwrap();
+		assert_eq!(
+			web.player,
+			"https://platform.twitter.com/embed/Tweet.html?id=1891234567890123456"
+		);
+		assert_eq!(web.provider, "X");
+		assert_eq!(
+			web.page.as_deref(),
+			Some("https://x.com/SereinApp/status/1891234567890123456")
+		);
+		// The same post under the old domain, or without its account name, is one player.
+		for url in [
+			"https://twitter.com/SereinApp/status/1891234567890123456",
+			"https://x.com/i/web/status/1891234567890123456",
+			"https://x.com/i/status/1891234567890123456",
+		] {
+			let mut twitter = x.clone();
+			twitter.url = Some(url.into());
+			assert_eq!(
+				provider_video(&twitter).unwrap().player,
+				"https://platform.twitter.com/embed/Tweet.html?id=1891234567890123456",
+				"{url}"
+			);
+		}
+		let tiktok = post(
+			"https://www.tiktok.com/@serein/video/7412345678901234567",
+			"https://v16-webapp.tiktok.com/clip.mp4",
+		);
+		let web = provider_video(&tiktok).unwrap();
+		assert_eq!(
+			web.player,
+			"https://www.tiktok.com/embed/v2/7412345678901234567"
+		);
+		assert_eq!(web.provider, "TikTok");
+		// A card that names the post only in its video field is still the same player.
+		let mut embed_only = tiktok.clone();
+		embed_only.url = None;
+		embed_only.video.as_mut().unwrap().url =
+			Some("https://www.tiktok.com/embed/v2/7412345678901234567".into());
+		assert_eq!(
+			provider_video(&embed_only).unwrap().player,
+			"https://www.tiktok.com/embed/v2/7412345678901234567"
+		);
+		// A link preview without a video stays a poster, not a player.
+		let mut still = tiktok.clone();
+		still.video = None;
+		still.kind = "rich".into();
+		assert!(provider_video(&still).is_none());
+		for url in [
+			"https://x.com/SereinApp/status/1891234567890123456x",
+			"https://x.com/SereinApp/status/",
+			"https://x.com/SereinApp",
+			"https://x.com/status/1891234567890123456",
+			"https://x.com.evil.test/SereinApp/status/1891234567890123456",
+			"http://x.com/SereinApp/status/1891234567890123456",
+			"https://user@x.com/SereinApp/status/1891234567890123456",
+			"https://www.tiktok.com/@serein",
+			"https://www.tiktok.com/video/7412345678901234567",
+			"https://vm.tiktok.com/ZMabcdef/",
+			"https://www.tiktok.com/@serein/video/74123456789012345678901234567",
+		] {
+			let mut hostile = tiktok.clone();
+			hostile.url = Some(url.into());
+			assert!(provider_video(&hostile).is_none(), "{url}");
 		}
 	}
 
