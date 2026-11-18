@@ -67,7 +67,8 @@ struct Live {
 struct Closing {
 	context: Context,
 	started: Instant,
-	timed_out: bool,
+	/// Set while the stop waits for voice signaling to return; the timeout restarts after it.
+	waited: bool,
 }
 struct SourceScan {
 	generation: u64,
@@ -158,7 +159,7 @@ impl Screen {
 			self.closing = Some(Closing {
 				context,
 				started: Instant::now(),
-				timed_out: false,
+				waited: false,
 			});
 			self.command = Some(Command::Voice(voice::Command::StopStream {
 				channel: context.channel,
@@ -364,14 +365,15 @@ impl Screen {
 		{
 			self.stop();
 		}
-		if let Some(context) = self
-			.pending
-			.as_ref()
-			.map(|pending| pending.context)
-			.or_else(|| self.live.as_ref().map(|live| live.context))
-			&& !state.can_stream(context.channel)
-		{
-			self.fail("Screen-share permission was removed; stopping sharing");
+		// A live share keeps its already-granted access across a Gateway reconnect; only a
+		// share that has not started yet needs the live connection that `can_stream` requires.
+		let lost_access = match (&self.live, &self.pending) {
+			(Some(live), _) => !state.has_stream_access(live.context.channel),
+			(None, Some(pending)) => !state.can_stream(pending.context.channel),
+			(None, None) => false,
+		};
+		if lost_access {
+			self.fail("Screen sharing is no longer permitted; stopping sharing");
 		}
 
 		if let Some(request) = ui.screen.request.take() {
@@ -528,15 +530,33 @@ impl Screen {
 			ui.screen.preview_paused = false;
 		}
 
-		if let Some(closing) = &mut self.closing {
-			if !closing.timed_out && closing.started.elapsed() >= SIGNAL_TIMEOUT {
-				closing.timed_out = true;
-				self.status = "Discord did not acknowledge stopping screen share; leave the call before sharing again".into();
-				self.toast = Some((ui::design::Level::Warning, self.status.clone()));
+		if self.closing.is_some() && !state.gateway_connected {
+			// Signaling is down: the stop is retried when it returns, so keep waiting instead
+			// of reporting a failure that has not happened yet.
+			if let Some(closing) = &mut self.closing {
+				closing.waited = true;
 			}
-			if !closing.timed_out {
-				ctx.request_repaint_after(SIGNAL_TIMEOUT.saturating_sub(closing.started.elapsed()));
+			self.status = "Waiting for voice signaling to stop sharing…".into();
+		} else if self.closing.as_ref().is_some_and(|closing| closing.waited) {
+			// Signaling is back: the retried stop gets a fresh confirmation window.
+			if let Some(closing) = &mut self.closing {
+				closing.waited = false;
+				closing.started = Instant::now();
 			}
+			ctx.request_repaint_after(SIGNAL_TIMEOUT);
+		} else if self
+			.closing
+			.as_ref()
+			.is_some_and(|closing| closing.started.elapsed() >= SIGNAL_TIMEOUT)
+		{
+			self.status =
+				"Discord did not confirm stopping screen share; it may still show as live".into();
+			self.toast = Some((ui::design::Level::Warning, self.status.clone()));
+			// Release the control instead of leaving it in the live style forever. A late
+			// confirmation is ignored, and Discord's own error explains a conflicting start.
+			self.closing = None;
+		} else if let Some(closing) = &self.closing {
+			ctx.request_repaint_after(SIGNAL_TIMEOUT.saturating_sub(closing.started.elapsed()));
 		}
 		ui.screen.busy = self.pending.is_some()
 			|| self.live.is_some()
@@ -747,7 +767,10 @@ mod tests {
 			}))
 		));
 
-		let mut state = State::default();
+		let mut state = State {
+			gateway_connected: true,
+			..State::default()
+		};
 		state.voice.active = Some(voice::Call {
 			channel: Id(20),
 			guild: Some(Id(10)),
@@ -801,6 +824,132 @@ mod tests {
 			}))
 		));
 		assert!(ui.screen.busy);
-		assert!(ui.screen.status.contains("permission"));
+		assert!(ui.screen.status.contains("no longer permitted"));
+	}
+
+	#[test]
+	fn timed_out_stop_releases_the_share_control() {
+		let runtime = tokio::runtime::Builder::new_current_thread()
+			.enable_all()
+			.build()
+			.unwrap();
+		let ctx = egui::Context::default();
+		let context = Context {
+			generation: 0,
+			channel: Id(20),
+			request: 7,
+			stream_request: 8,
+		};
+		let mut screen = Screen {
+			closing: Some(Closing {
+				context,
+				started: Instant::now() - SIGNAL_TIMEOUT,
+				waited: false,
+			}),
+			..Screen::default()
+		};
+		let mut state = State {
+			gateway_connected: true,
+			..State::default()
+		};
+		state.voice.active = Some(voice::Call {
+			channel: Id(20),
+			guild: Some(Id(10)),
+			connected_at: Some(Instant::now()),
+			channel_started_at: None,
+			server_muted: false,
+			server_deafened: false,
+			request: 7,
+			phase: voice::Phase::Connected,
+			muted: false,
+			deafened: false,
+			participants: vec![],
+			error: None,
+			reconnecting: None,
+			camera: false,
+			watching: None,
+		});
+		let mut ui = ui::MessagingUi::default();
+		let call = Call {
+			generation: 0,
+			channel: Id(20),
+			request: 7,
+			user: Id(1),
+			peer: None,
+			session: "synthetic-session",
+			identity: Identity::generate(),
+		};
+		assert!(
+			screen
+				.poll(&runtime, &state, &mut ui, &ctx, Some(call))
+				.is_none()
+		);
+		assert!(screen.closing.is_none());
+		assert!(
+			!ui.screen.busy,
+			"a failed stop must not leave the control live"
+		);
+		assert!(ui.screen.status.contains("did not confirm"));
+	}
+
+	#[test]
+	fn a_stop_waits_while_signaling_is_down_instead_of_timing_out() {
+		let runtime = tokio::runtime::Builder::new_current_thread()
+			.enable_all()
+			.build()
+			.unwrap();
+		let ctx = egui::Context::default();
+		let context = Context {
+			generation: 0,
+			channel: Id(20),
+			request: 7,
+			stream_request: 8,
+		};
+		let mut screen = Screen {
+			closing: Some(Closing {
+				context,
+				started: Instant::now() - SIGNAL_TIMEOUT,
+				waited: false,
+			}),
+			..Screen::default()
+		};
+		let mut state = State::default();
+		state.voice.active = Some(voice::Call {
+			channel: Id(20),
+			guild: Some(Id(10)),
+			connected_at: Some(Instant::now()),
+			channel_started_at: None,
+			server_muted: false,
+			server_deafened: false,
+			request: 7,
+			phase: voice::Phase::Connected,
+			muted: false,
+			deafened: false,
+			participants: vec![],
+			error: None,
+			reconnecting: None,
+			camera: false,
+			watching: None,
+		});
+		let mut ui = ui::MessagingUi::default();
+		let call = Call {
+			generation: 0,
+			channel: Id(20),
+			request: 7,
+			user: Id(1),
+			peer: None,
+			session: "synthetic-session",
+			identity: Identity::generate(),
+		};
+		assert!(
+			screen
+				.poll(&runtime, &state, &mut ui, &ctx, Some(call))
+				.is_none()
+		);
+		assert!(
+			screen.closing.is_some(),
+			"the stop is retried after reconnect"
+		);
+		assert!(ui.screen.status.contains("Waiting for voice signaling"));
 	}
 }

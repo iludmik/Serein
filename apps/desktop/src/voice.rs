@@ -2428,6 +2428,10 @@ mod tests {
 			assert!(state.voice.active.as_ref().unwrap().camera);
 			assert!(state.has_camera_access(channel));
 			assert!(!state.can_camera(channel));
+			// An established share follows the same rule: capture survives the outage,
+			// while a new share still needs the live Gateway.
+			assert!(state.has_stream_access(channel));
+			assert!(!state.can_stream(channel));
 			assert!(camera_preview_allowed(&state));
 			state.apply(client_core::Envelope {
 				generation: state.generation,
@@ -2435,6 +2439,7 @@ mod tests {
 			});
 			assert!(state.gateway_connected);
 			assert!(state.can_camera(channel));
+			assert!(state.can_stream(channel));
 			assert!(camera_preview_allowed(&state));
 			state.voice.active.as_mut().unwrap().connected_at = None;
 			for phase in [
@@ -2465,6 +2470,7 @@ mod tests {
 					}),
 				});
 				assert!(!state.has_camera_access(channel));
+				assert!(!state.has_stream_access(channel));
 				assert!(!camera_preview_allowed(&state));
 			}
 			state.voice.active = None;

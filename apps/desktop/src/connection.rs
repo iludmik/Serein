@@ -487,6 +487,9 @@ impl Connection {
                 let mut voice_request=None;
                 // One local release may wait for queue space; later joins cannot overtake it.
                 let mut pending_abandonment=None;
+                // A stop refused during an outage is sent once voice signaling returns; a
+                // reconnect drains the Gateway's queued controls, so the local loop holds it.
+                let mut held_stream_stop:Option<client_core::voice::Command>=None;
                 loop {
                     tokio::select! {
                         failure=api.terminal_failure()=>{return Err(failure);}
@@ -499,12 +502,13 @@ impl Connection {
                             let calls=recipient_call.lock().map_err(|_|Failure::Protocol)?;
                             if recipient_ringing.as_ref().is_some_and(|(control,_)| !recipient_write_allowed(*control,&calls,&channels)) {drop(recipient_ringing.take());}
                         }
-                        permit=voice_send.reserve(), if pending_abandonment.is_some()=> {
+                        permit=voice_send.reserve(), if pending_abandonment.is_some()||(held_stream_stop.is_some()&&*voice_availability.borrow())=> {
                             if let Ok(permit)=permit {
-                                permit.send(pending_abandonment.take().expect("pending abandonment"));
+                                if let Some(stop)=held_stream_stop.take() {permit.send(stop);}
+                                else if let Some(abandonment)=pending_abandonment.take() {permit.send(abandonment);}
                             } else {
                                 // The Gateway task owns connection termination when its queue closes.
-                                pending_abandonment=None;
+                                pending_abandonment=None;held_stream_stop=None;
                             }
                         }
                         changed=takeover_receive.changed()=> {
@@ -514,6 +518,7 @@ impl Connection {
                         changed=voice_availability.changed()=> {
 							if changed.is_err() {break;}
 							if !*voice_availability.borrow_and_update() {drop(ringing.take());drop(recipient_ringing.take());drop(profile.take());drop(stream_preview.take());drop(search.take());drop(mentions.take());voice_request=None;recipient_call.lock().map_err(|_|Failure::Protocol)?.active=None;if let Some(cancel)=&upload_cancel {let _=cancel.send(true);}}
+							else if let Some(stop)=held_stream_stop.take() && let Err(mpsc::error::TrySendError::Full(stop))=voice_send.try_send(stop) {held_stream_stop=Some(stop);}
                         }
                         request=upload_receive.recv()=>{
                             let Some(request)=request else {break;};
@@ -723,11 +728,7 @@ impl Connection {
 									|client_core::voice::Command::StopStream{channel,request,stream_request}=>(channel,request,stream_request),
 									_=>unreachable!(),
 								};
-								let message=if !*voice_availability.borrow() {
-									Some("Voice signaling is disconnected; screen-share action was not sent")
-								} else if voice_send.try_send(control).is_err() {
-									Some("Screen-share action was not sent; the voice queue is full")
-								} else {None};
+								let message=queue_stream_action(&voice_send,&mut held_stream_stop,control,*voice_availability.borrow());
 								if let Some(message)=message {
 									emit(Event::Voice(E::Stream{channel,request,stream_request,event:screen::Event::Failed(message)}))?;
 								}
@@ -1808,6 +1809,49 @@ fn queue_abandonment(
 	}
 }
 
+// A stop refused during an outage is retried when signaling returns, because a reconnect drains
+// the Gateway's queued controls. A held stop goes first so a later start cannot overtake it.
+fn queue_stream_action(
+	sender: &mpsc::Sender<client_core::voice::Command>,
+	pending: &mut Option<client_core::voice::Command>,
+	control: client_core::voice::Command,
+	online: bool,
+) -> Option<&'static str> {
+	let stop = matches!(control, client_core::voice::Command::StopStream { .. });
+	if !online {
+		if stop {
+			// The newest stop replaces an older one that is still waiting.
+			*pending = Some(control);
+			return None;
+		}
+		return Some("Voice signaling is disconnected; screen-share action was not sent");
+	}
+	let control = if stop {
+		pending.take().unwrap_or(control)
+	} else {
+		control
+	};
+	if !stop
+		&& let Some(held) = pending.take()
+		&& let Err(mpsc::error::TrySendError::Full(held)) = sender.try_send(held)
+	{
+		*pending = Some(held);
+		return Some("Screen-share action was not sent; the voice queue is full");
+	}
+	match sender.try_send(control) {
+		Ok(()) => None,
+		Err(mpsc::error::TrySendError::Full(control)) => {
+			if stop {
+				*pending = Some(control);
+			}
+			Some("Screen-share action was not sent; the voice queue is full")
+		}
+		Err(mpsc::error::TrySendError::Closed(_)) => {
+			Some("Voice signaling is disconnected; screen-share action was not sent")
+		}
+	}
+}
+
 // A stale candidate cannot fail its replacement: the desktop rechecks the tagged revision.
 fn report_confirmation_failure(
 	sender: &watch::Sender<Option<ConfirmationFailure>>,
@@ -2748,6 +2792,64 @@ mod tests {
 		drop(receiver);
 		queue_abandonment(&sender, &mut pending, release, None);
 		assert!(pending.is_none()); // Closed queues are handled by the existing Gateway task.
+	}
+
+	#[tokio::test]
+	async fn stream_stop_waits_for_signaling_and_precedes_a_fresh_start() {
+		use client_core::voice::Command as V;
+		let channel = model::Id(20);
+		let stop = V::StopStream {
+			channel,
+			request: 5,
+			stream_request: 8,
+		};
+		let mut pending = None;
+		let (sender, mut receiver) = mpsc::channel(2);
+		// The Gateway drains queued controls across a reconnect, so an offline stop is held.
+		assert!(queue_stream_action(&sender, &mut pending, stop, false).is_none());
+		assert!(matches!(
+			pending,
+			Some(V::StopStream {
+				stream_request: 8,
+				..
+			})
+		));
+		// A stop that cannot fit the queue stays held instead of being lost.
+		for _ in 0..2 {
+			sender.try_send(V::Sync { channel }).unwrap();
+		}
+		assert!(queue_stream_action(&sender, &mut pending, stop, true).is_some());
+		assert!(matches!(
+			pending,
+			Some(V::StopStream {
+				stream_request: 8,
+				..
+			})
+		));
+		receiver.recv().await.unwrap();
+		receiver.recv().await.unwrap();
+		// The held stop reaches Discord before a replacement share starts.
+		let start = V::StartStream {
+			channel,
+			request: 5,
+			stream_request: 9,
+		};
+		assert!(queue_stream_action(&sender, &mut pending, start, true).is_none());
+		assert!(pending.is_none());
+		assert!(matches!(
+			receiver.try_recv(),
+			Ok(V::StopStream {
+				stream_request: 8,
+				..
+			})
+		));
+		assert!(matches!(
+			receiver.try_recv(),
+			Ok(V::StartStream {
+				stream_request: 9,
+				..
+			})
+		));
 	}
 
 	#[test]
