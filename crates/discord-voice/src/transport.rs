@@ -561,6 +561,9 @@ async fn run_inner(
 	// Set when the signaling socket died or went silent; the next loop turn resumes it.
 	let mut reconnect: Option<&'static str> = None;
 	let mut deadline = Some(Instant::now() + Duration::from_secs(90));
+	// One replacement key package per negotiation episode: a stalled group
+	// negotiation gets a fresh 30s window instead of killing the transport.
+	let mut renegotiated = false;
 	let mut ready_announced = false;
 	let mut waiting_announced = false;
 	let mut resuming = false;
@@ -689,7 +692,20 @@ async fn run_inner(
 			},
 			_=tick.tick()=>{
 				let now=Instant::now();
-				if deadline.is_some_and(|d|now>=d) {return Err(negotiation_timeout(heartbeat_ms.is_some(),udp.is_some(),encryption.is_some(),&dave,resuming));}
+				// A cleared deadline starts a fresh negotiation episode with a fresh retry budget.
+				if deadline.is_none() {renegotiated=false;}
+				if deadline.is_some_and(|d|now>=d) {
+					// Hello, transport and key arrived but no commit or welcome: the peer's
+					// commit for our key package was lost or raced. Resend a replacement
+					// key package and grant one more window before giving up.
+					if !renegotiated && heartbeat_ms.is_some() && udp.is_some() && encryption.is_some() && !resuming && !dave.session.is_ready() && !dave.transitioning() {
+						renegotiated=true;
+						deadline=Some(now+Duration::from_secs(30));
+						send(&mut ws,Message::Binary(dave.key_package()?.into())).await?;
+						continue;
+					}
+					return Err(negotiation_timeout(heartbeat_ms.is_some(),udp.is_some(),encryption.is_some(),&dave,resuming));
+				}
 				if discovering && now>=discovery_deadline {return Err("Discord voice UDP discovery timed out; check the network firewall");}
 				if !discovering && now>=next_udp_ping && let Some(socket)=&udp {
 					udp_keepalive(socket,&mut udp_failures,&mut udp_ping_sequence)?;
@@ -1742,6 +1758,9 @@ async fn run_stream_inner(
 	let mut awaiting_ack = None;
 	let mut seq_ack = -1i64;
 	let mut deadline = Some(Instant::now() + Duration::from_secs(90));
+	// One replacement key package per negotiation episode: a stalled group
+	// negotiation gets a fresh 30s window instead of killing the stream.
+	let mut renegotiated = false;
 	let mut announced = false;
 	let mut waiting_announced = false;
 	let mut awaiting_keyframe = true;
@@ -1834,7 +1853,20 @@ async fn run_stream_inner(
 			_=tick.tick()=>{
 				let now=Instant::now();
 				history.expire(now);
-				if deadline.is_some_and(|at| now>=at) {return Err(negotiation_timeout(heartbeat_ms.is_some(),udp.is_some(),encryption.is_some(),&dave,false));}
+				// A cleared deadline starts a fresh negotiation episode with a fresh retry budget.
+				if deadline.is_none() {renegotiated=false;}
+				if deadline.is_some_and(|at| now>=at) {
+					// The streamer never committed to our key package or the welcome was
+					// lost: resend a replacement key package and grant one more window.
+					if !renegotiated && heartbeat_ms.is_some() && udp.is_some() && encryption.is_some() && !dave.session.is_ready() && !dave.transitioning() {
+						renegotiated=true;
+						deadline=Some(now+Duration::from_secs(30));
+						send(&mut ws,Message::Binary(dave.key_package()?.into())).await?;
+						metrics.signal(Signal::KeyPackageSent,1);
+						continue;
+					}
+					return Err(negotiation_timeout(heartbeat_ms.is_some(),udp.is_some(),encryption.is_some(),&dave,false));
+				}
 				if discovering {
 					if now>=discovery_deadline {return Err("Discord stream UDP discovery timed out");}
 					if now>=next_discovery_probe && let Some(socket)=&udp {
@@ -4050,15 +4082,20 @@ mod tests {
 	}
 	#[tokio::test]
 	async fn local_voice_dave_downgrade_transition_disables_dave_and_announces_ready() {
-		local_voice_dave_transition(true).await;
+		local_voice_dave_transition(true, false).await;
 	}
 
 	#[tokio::test]
 	async fn local_voice_dave_negotiation_has_a_deadline_after_transport_ready() {
-		local_voice_dave_transition(false).await;
+		local_voice_dave_transition(false, false).await;
 	}
 
-	async fn local_voice_dave_transition(execute: bool) {
+	#[tokio::test]
+	async fn local_voice_dave_negotiation_sends_one_replacement_key_package() {
+		local_voice_dave_transition(false, true).await;
+	}
+
+	async fn local_voice_dave_transition(execute: bool, renegotiate: bool) {
 		use client_core::voice::Secret;
 		let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
 		let address = listener.local_addr().unwrap();
@@ -4070,6 +4107,7 @@ mod tests {
 		let (media_done_tx, media_done_rx) = tokio::sync::oneshot::channel::<()>();
 		let (prepared_tx, prepared_rx) = tokio::sync::oneshot::channel::<()>();
 		let (execute_tx, execute_rx) = tokio::sync::oneshot::channel::<()>();
+		let (replacement_tx, replacement_rx) = tokio::sync::oneshot::channel::<()>();
 
 		let server = tokio::spawn(async move {
 			let (stream, _) = listener.accept().await.unwrap();
@@ -4159,6 +4197,43 @@ mod tests {
 					}
 					_ => {}
 				}
+			}
+
+			if renegotiate {
+				// Announce the DM peer so sole-member waiting cannot absorb the
+				// stall, then withhold every commit and welcome. The first
+				// silent window must end with exactly one replacement key
+				// package instead of a failure.
+				ws.send(Message::Text(
+					json!({"op":5,"d":{"user_id":"2","ssrc":43}})
+						.to_string()
+						.into(),
+				))
+				.await
+				.unwrap();
+				prepared_tx.send(()).unwrap();
+				loop {
+					match ws.next().await.unwrap().unwrap() {
+						Message::Binary(bytes) => {
+							assert_eq!(bytes[0], 26);
+							replacement_tx.send(()).unwrap();
+							break;
+						}
+						Message::Text(text) => {
+							let event: Value = serde_json::from_str(&text).unwrap();
+							if event["op"] == 3 {
+								ws.send(Message::Text(
+									json!({"op":6,"d":{"t":event["d"]["t"]}}).to_string().into(),
+								))
+								.await
+								.unwrap();
+							}
+						}
+						_ => {}
+					}
+				}
+				let _ = ready_rx.await;
+				return;
 			}
 
 			// Server sends Op 21 preparing downgrade to non-DAVE with transition_id: 10
@@ -4283,7 +4358,9 @@ mod tests {
 			true,
 		));
 
-		let test = timeout(Duration::from_secs(45), async {
+		// The watchdog must outlast the virtual negotiation windows below, which
+		// advance the paused clock by up to 62s.
+		let test = timeout(Duration::from_secs(120), async {
 			prepared_rx.await.unwrap();
 			// Advance the media tick before allowing execute; no real-time wait is needed.
 			tokio::time::pause();
@@ -4301,6 +4378,23 @@ mod tests {
 				);
 			}
 			tokio::time::resume();
+			if renegotiate {
+				// The first silent window must have produced exactly one
+				// replacement key package; the second silent window is what
+				// may finally fail the call.
+				replacement_rx.await.unwrap();
+				tokio::time::pause();
+				tokio::time::advance(Duration::from_secs(31)).await;
+				tokio::task::yield_now().await;
+				tokio::time::resume();
+				let reason = (&mut task).await.unwrap().unwrap_err();
+				assert!(
+					reason.contains("DAVE group negotiation timed out"),
+					"{reason}"
+				);
+				let _ = ready_tx.send(());
+				return;
+			}
 			execute_tx.send(()).unwrap();
 			if !execute {
 				let reason = (&mut task).await.unwrap().unwrap_err();
