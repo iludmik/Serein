@@ -2285,16 +2285,19 @@ provider player on Windows and macOS. An X card is recognized only from an
 only from a `tiktok.com` post link with a numeric video id; the application
 rebuilds the provider's own embed page from that id and never loads the posted
 address itself. It uses one temporary playback-only webview with no Discord
-credentials, IPC or downloads. Top-level navigation is restricted to provider
-hosts; the Windows callback does not filter frame or resource requests. Popup
+credentials, IPC or downloads. X stages reserve the post chrome around the clip, so the
+official embed page fits without an inner scroll. Top-level navigation is restricted to
+provider hosts; the Windows callback does not filter frame or resource requests. Popup
 links use the normal external-link confirmation. Autoplay is allowed after the
 user's Play action; other browser permission requests are denied where the
 webview backend supports the permission handler. Closing the player, hiding the
-app or logout destroys it. Linux currently falls back to external-link
-confirmation, as do unsupported providers and failed webview creation. The
-offline demo never opens a provider webview. The X and TikTok embed pages were
-checked in a browser engine; live Discord media and provider playback have not
-been verified.
+app or logout destroys it. Age-restricted or otherwise sensitive X media is refused by
+X's own embed page (it reports "Not found") for a session without X credentials; the
+player keeps an "Open in browser" action for that case, and signing in is out of scope.
+Linux currently falls back to external-link confirmation, as do unsupported providers
+and failed webview creation. The offline demo never opens a provider webview. The X and
+TikTok embed pages were checked in a browser engine; live Discord media and provider
+playback have not been verified.
 
 The native MPEG-4 source does not support external tracks; it receives an unnamed byte
 stream without a base URL and Media Foundation starts with socket support disabled.

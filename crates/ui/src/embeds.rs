@@ -1213,11 +1213,23 @@ pub fn estimated_height(embeds: &[Embed]) -> f32 {
 	while index < embeds.len() {
 		let count = gallery_len(&embeds[index..]);
 		let e = &embeds[index];
-		let stage = native_video(e)
-			.map(|a| (a.media.width, a.media.height))
-			.or_else(|| provider_video(e).map(|v| (v.width, v.height)));
-		let image_height = if let Some((width, height)) = stage {
+		let native = native_video(e);
+		// A Discord-proxied clip plays natively; only cards without one use the provider
+		// stage, matching the render path's priority.
+		let provider = if native.is_some() {
+			None
+		} else {
+			provider_video(e)
+		};
+		let image_height = if let Some((width, height)) = native
+			.as_ref()
+			.map(|attachment| (attachment.media.width, attachment.media.height))
+		{
 			crate::video::embed_stage_height(width, height, 456.0) + 6.0
+		} else if let Some(video) = &provider {
+			// The same stage the provider player allocates, so the timeline estimate
+			// tracks X's taller post card instead of clipping it.
+			crate::video::provider_stage(video, 456.0).y + 6.0
 		} else if count > 1 {
 			gallery_rect(count, count - 1, 456.0).bottom()
 		} else if e.image.is_some() || large_thumbnail(e).is_some() || clip_media(e).is_some() {
@@ -1269,13 +1281,23 @@ pub fn estimated_height(embeds: &[Embed]) -> f32 {
 				lines = 1.0;
 			}
 			let text = 24.0 + lines * 20.0 + 6.0;
-			let thumb = if e.thumbnail.is_some() && stage.is_none() && large_thumbnail(e).is_none()
+			let thumb = if e.thumbnail.is_some()
+				&& provider.is_none()
+				&& native.is_none()
+				&& large_thumbnail(e).is_none()
 			{
 				114.0
 			} else {
 				0.0
 			};
-			(text.max(thumb) + e.fields.len() as f32 * 44.0 + image_height).min(664.0)
+			let body = text.max(thumb) + e.fields.len() as f32 * 44.0 + image_height;
+			// Provider players size themselves (X reserves its own post chrome); the
+			// generic card ceiling would clip them. Other cards keep the bound.
+			if provider.is_some() {
+				body
+			} else {
+				body.min(664.0)
+			}
 		};
 		index += count;
 	}
@@ -1864,6 +1886,72 @@ mod tests {
 			hostile.url = Some(url.into());
 			assert!(provider_video(&hostile).is_none(), "{url}");
 		}
+	}
+
+	/// X's embed page is the whole post, so the stage must reserve the header, text and
+	/// footer around the clip; a media-only stage forced a scroll inside the webview.
+	#[test]
+	fn x_posts_reserve_the_post_chrome_instead_of_cropping_the_player() {
+		let post = |url: &str, width: u32, height: u32| Embed {
+			kind: "rich".into(),
+			url: Some(url.into()),
+			thumbnail: Some(model::EmbedMedia {
+				url: Some("https://pbs.twimg.com/synthetic.jpg".into()),
+				width: 480,
+				height: 854,
+				..Default::default()
+			}),
+			video: Some(model::EmbedMedia {
+				url: Some("https://video.twimg.com/synthetic.mp4".into()),
+				width,
+				height,
+				..Default::default()
+			}),
+			..Default::default()
+		};
+		// A landscape clip: the old 350 px media bound cropped the post below its clip.
+		let landscape = post(
+			"https://x.com/SereinApp/status/1891234567890123456",
+			1280,
+			720,
+		);
+		let web = provider_video(&landscape).unwrap();
+		let stage = crate::video::provider_stage(&web, 550.0);
+		assert!(stage.y > 350.0 && stage.y <= 900.0, "{stage:?}");
+		// The timeline runs the same estimate over its own probe width, never capped below
+		// the stage it is reserving for.
+		assert!(
+			estimated_height(std::slice::from_ref(&landscape))
+				>= crate::video::provider_stage(&web, 456.0).y,
+			"estimate clipped an X post"
+		);
+		// A Discord-proxied X clip still plays natively, so its estimate keeps the native
+		// stage instead of reserving the taller post.
+		let mut proxied = landscape.clone();
+		proxied.video.as_mut().unwrap().proxy_url = Some(
+			"https://media.discordapp.net/external/h/https/video.twimg.com/synthetic.mp4".into(),
+		);
+		assert!(native_video(&proxied).is_some());
+		assert!(
+			estimated_height(std::slice::from_ref(&proxied))
+				< crate::video::provider_stage(&web, 456.0).y
+		);
+		// A portrait clip is capped by X at a square and still keeps its chrome.
+		let portrait = post(
+			"https://x.com/SereinApp/status/1891234567890123456",
+			720,
+			1280,
+		);
+		let web = provider_video(&portrait).unwrap();
+		let stage = crate::video::provider_stage(&web, 550.0);
+		assert!(stage.y > 550.0 && stage.y <= 900.0, "{stage:?}");
+		// YouTube keeps the existing media-only bound.
+		let mut youtube = portrait.clone();
+		youtube.url = None;
+		youtube.video.as_mut().unwrap().url =
+			Some("https://www.youtube.com/embed/KwRSAfoW5uo".into());
+		let web = provider_video(&youtube).unwrap();
+		assert!(crate::video::provider_stage(&web, 550.0).y <= 350.0);
 	}
 
 	fn gallery_embeds(count: usize) -> Vec<Embed> {

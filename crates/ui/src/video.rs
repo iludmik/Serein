@@ -21,6 +21,14 @@ fn video_pixels(rgba: &[u8]) -> &[egui::Color32] {
 const CORNER: u8 = 8;
 const MAX_WIDTH: f32 = crate::avatars::media::MEDIA_MAX_WIDTH;
 const MAX_HEIGHT: f32 = crate::avatars::media::MEDIA_MAX_HEIGHT;
+/// X's official embed is the whole post, not just its media: header, text, the clip and
+/// the footer. A stage sized to the clip alone hides the player behind that chrome and
+/// makes the webview scroll internally, so X posts also reserve the chrome measured at
+/// the embed's 550 px width.
+const X_CHROME_HEIGHT: f32 = 380.0;
+/// Ceiling for an X post card: a square clip plus its chrome fits; unusually long post
+/// text may still scroll. Keeping the bound avoids one post owning the whole viewport.
+const X_MAX_HEIGHT: f32 = 900.0;
 const BAR_HEIGHT: f32 = 60.0;
 /// Decoded pictures share the platform's inline bound: 4K worth of pixels in a 3840 px square.
 const MAX_FRAME_EDGE: usize = 3840;
@@ -1012,6 +1020,19 @@ impl VideoUi {
 			{
 				self.web_mode = WebMode::Mini;
 			}
+			// Providers can refuse a post inside the embed (X does for age-restricted
+			// media); keep the shared link reachable while the player is covering it.
+			if let Some(page) = &video.page
+				&& crate::attachments::glass_button(
+					&mut controls,
+					crate::icons::Icon::External,
+					24.0,
+					"Open in browser…",
+				)
+				.clicked()
+			{
+				*opening = Some(page.clone());
+			}
 			controls.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
 				ui.add(
 					egui::Label::new(
@@ -1333,13 +1354,20 @@ impl Drop for VideoUi {
 pub(crate) fn is_embedded(attachment: &Attachment) -> bool {
 	attachment.size == 0
 }
-fn provider_stage(video: &WebVideo, width: f32) -> egui::Vec2 {
+pub(crate) fn provider_stage(video: &WebVideo, width: f32) -> egui::Vec2 {
 	let (w, h) = if video.width > 0 && video.height > 0 {
 		(video.width as f32, video.height as f32)
 	} else {
 		(16.0, 9.0)
 	};
 	let width = width.clamp(1.0, MAX_WIDTH);
+	if video.provider == "X" {
+		// X renders portrait media no taller than it is wide; reserve that square plus
+		// the post chrome so the clip is visible without scrolling inside the webview.
+		let media = (width * h / w).min(width);
+		return egui::vec2(width, (media + X_CHROME_HEIGHT).min(X_MAX_HEIGHT))
+			.max(egui::vec2(1.0, 1.0));
+	}
 	let scale = (width / w).min(MAX_HEIGHT / h);
 	(egui::vec2(w, h) * scale).max(egui::vec2(1.0, 1.0))
 }
