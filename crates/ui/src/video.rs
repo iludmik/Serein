@@ -23,13 +23,11 @@ const MAX_WIDTH: f32 = crate::avatars::media::MEDIA_MAX_WIDTH;
 const MAX_HEIGHT: f32 = crate::avatars::media::MEDIA_MAX_HEIGHT;
 /// X's official embed is the whole post, not just its media: header, text, the clip and
 /// the footer. A stage sized to the clip alone hides the player behind that chrome and
-/// makes the webview scroll internally, so X posts also reserve the chrome measured at
-/// the embed's 550 px width (about 380 px), plus the 30 px inline header the player draws
-/// above the webview.
-const X_CHROME_HEIGHT: f32 = 410.0;
-/// Ceiling for an X post card: a square clip plus its chrome fits; unusually long post
-/// text may still scroll. Keeping the bound avoids one post owning the whole viewport.
-const X_MAX_HEIGHT: f32 = 930.0;
+/// makes the webview scroll internally, so X posts also reserve the chrome around the
+/// clip (measured at the embed's 550 px width) plus the 30 px inline header the player
+/// draws above the webview. The bound fits a typical short post without leaving a large
+/// empty strip; a longer post may scroll for its footer.
+const X_CHROME_HEIGHT: f32 = 300.0;
 const BAR_HEIGHT: f32 = 60.0;
 /// Decoded pictures share the platform's inline bound: 4K worth of pixels in a 3840 px square.
 const MAX_FRAME_EDGE: usize = 3840;
@@ -951,20 +949,6 @@ impl VideoUi {
 	) {
 		let size = provider_stage(video, ui.available_width());
 		let (stage, _) = ui.allocate_exact_size(size, egui::Sense::hover());
-		if let Some(poster) = poster {
-			let mut image_ui = ui.new_child(egui::UiBuilder::new().max_rect(stage));
-			images.show_media(
-				&mut image_ui,
-				poster,
-				size,
-				demo,
-				crate::avatars::Surface::Banner,
-			);
-		}
-		if poster.is_none() {
-			ui.painter()
-				.rect_filled(stage, CORNER, egui::Color32::BLACK);
-		}
 		// This message's embed owns inline playback: the webview covers everything below
 		// the strip, so the strip carries the expand and stop controls.
 		let playing_here = self.web_mode == WebMode::Inline
@@ -974,6 +958,25 @@ impl VideoUi {
 				.is_some_and(|(open_selected, channel, id, _)| {
 					open_selected == selected && channel == message.channel && id == message.id
 				});
+		// A provider webview is transparent around its own card. Painting the poster
+		// underneath would leak the thumbnail through rounded corners and margins, so
+		// playback sits on a solid stage instead.
+		if playing_here {
+			ui.painter()
+				.rect_filled(stage, CORNER, egui::Color32::BLACK);
+		} else if let Some(poster) = poster {
+			let mut image_ui = ui.new_child(egui::UiBuilder::new().max_rect(stage));
+			images.show_media(
+				&mut image_ui,
+				poster,
+				size,
+				demo,
+				crate::avatars::Surface::Banner,
+			);
+		} else {
+			ui.painter()
+				.rect_filled(stage, CORNER, egui::Color32::BLACK);
+		}
 		if playing_here {
 			const HEADER: f32 = 30.0;
 			let bar = egui::Rect::from_min_max(
@@ -1366,8 +1369,7 @@ pub(crate) fn provider_stage(video: &WebVideo, width: f32) -> egui::Vec2 {
 		// X renders portrait media no taller than it is wide; reserve that square plus
 		// the post chrome so the clip is visible without scrolling inside the webview.
 		let media = (width * h / w).min(width);
-		return egui::vec2(width, (media + X_CHROME_HEIGHT).min(X_MAX_HEIGHT))
-			.max(egui::vec2(1.0, 1.0));
+		return egui::vec2(width, media + X_CHROME_HEIGHT).max(egui::vec2(1.0, 1.0));
 	}
 	let scale = (width / w).min(MAX_HEIGHT / h);
 	(egui::vec2(w, h) * scale).max(egui::vec2(1.0, 1.0))
