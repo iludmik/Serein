@@ -1917,7 +1917,7 @@ mod tests {
 		);
 		let web = provider_video(&landscape).unwrap();
 		let stage = crate::video::provider_stage(&web, 550.0);
-		assert!(stage.y > 350.0 && stage.y <= 900.0, "{stage:?}");
+		assert!(stage.y > 350.0 && stage.y <= 930.0, "{stage:?}");
 		// The timeline runs the same estimate over its own probe width, never capped below
 		// the stage it is reserving for.
 		assert!(
@@ -1944,7 +1944,7 @@ mod tests {
 		);
 		let web = provider_video(&portrait).unwrap();
 		let stage = crate::video::provider_stage(&web, 550.0);
-		assert!(stage.y > 550.0 && stage.y <= 900.0, "{stage:?}");
+		assert!(stage.y > 550.0 && stage.y <= 930.0, "{stage:?}");
 		// YouTube keeps the existing media-only bound.
 		let mut youtube = portrait.clone();
 		youtube.url = None;

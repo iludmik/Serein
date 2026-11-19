@@ -24,11 +24,12 @@ const MAX_HEIGHT: f32 = crate::avatars::media::MEDIA_MAX_HEIGHT;
 /// X's official embed is the whole post, not just its media: header, text, the clip and
 /// the footer. A stage sized to the clip alone hides the player behind that chrome and
 /// makes the webview scroll internally, so X posts also reserve the chrome measured at
-/// the embed's 550 px width.
-const X_CHROME_HEIGHT: f32 = 380.0;
+/// the embed's 550 px width (about 380 px), plus the 30 px inline header the player draws
+/// above the webview.
+const X_CHROME_HEIGHT: f32 = 410.0;
 /// Ceiling for an X post card: a square clip plus its chrome fits; unusually long post
 /// text may still scroll. Keeping the bound avoids one post owning the whole viewport.
-const X_MAX_HEIGHT: f32 = 900.0;
+const X_MAX_HEIGHT: f32 = 930.0;
 const BAR_HEIGHT: f32 = 60.0;
 /// Decoded pictures share the platform's inline bound: 4K worth of pixels in a 3840 px square.
 const MAX_FRAME_EDGE: usize = 3840;
