@@ -74,6 +74,40 @@ const FULLSCREEN_BLOCK: &str = r#"(() => {
 		}
 	}
 })();"#;
+/// Serein's Play action is the user's choice to start the clip, but the X and TikTok
+/// embed pages load their own paused poster with a separate play control. Click that
+/// control once so a single Serein Play starts playback. Other providers are untouched.
+const START_PLAYBACK: &str = r#"(() => {
+	const host = location.hostname;
+	const control = (host === "twitter.com" || host.endsWith(".twitter.com"))
+		? '[aria-label^="Play Video"]'
+		: (host === "tiktok.com" || host.endsWith(".tiktok.com"))
+			? '[aria-label="Play video"]'
+			: null;
+	if (!control) return;
+	let started = false;
+	let tries = 0;
+	const start = () => {
+		if (started) return;
+		const button = document.querySelector(control);
+		if (button) {
+			started = true;
+			button.click();
+			return;
+		}
+		const video = document.querySelector("video");
+		if (video) {
+			started = true;
+			if (video.paused) {
+				const playing = video.play();
+				if (playing && playing.catch) playing.catch(() => {});
+			}
+			return;
+		}
+		if (++tries < 60) setTimeout(start, 250);
+	};
+	start();
+})();"#;
 
 #[cfg(not(target_os = "linux"))]
 pub struct WebPlayer {
@@ -102,6 +136,7 @@ impl WebPlayer {
 		let builder = wry::WebViewBuilder::new()
 			.with_url_and_headers(url, headers)
 			.with_initialization_script_for_main_only(FULLSCREEN_BLOCK, false)
+			.with_initialization_script_for_main_only(START_PLAYBACK, false)
 			.with_visible(false)
 			.with_incognito(true)
 			.with_devtools(false)
