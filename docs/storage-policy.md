@@ -1531,12 +1531,13 @@ Discord-proxied MP4/MOV embeds use the same reader and decoder bounds. A one-byt
 range probe establishes their otherwise unknown encoded size before playback;
 missing, malformed, zero or over-100-MiB totals are rejected.
 
-Provider playback owns at most one temporary, incognito YouTube/Vimeo webview on
-Windows and macOS. The application passes only a validated provider embed URL and
-retains at most four pending external links of 2,048 bytes each. It adds no media
-file cache or IPC bridge, and denies downloads. Browser-engine memory and network
-buffers are additional to the native decoder bounds above. Closing the player,
-hiding the app or logout releases the webview and its temporary session.
+Provider playback owns at most one temporary, incognito YouTube/Vimeo/X/TikTok
+webview on Windows and macOS. The application passes only a validated provider
+embed URL and retains at most four pending external links of 2,048 bytes each.
+It adds no media file cache or IPC bridge, and denies downloads. Browser-engine
+memory and network buffers are additional to the native decoder bounds above.
+Closing the player, hiding the app or logout releases the webview and its
+temporary session.
 
 
 ### Friends overview

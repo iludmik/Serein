@@ -1,5 +1,6 @@
-//! One temporary, user-started provider player (YouTube/Vimeo embeds). Ephemeral storage,
-//! no IPC, no downloads; links that leave the player go back to the app's link confirmation.
+//! One temporary, user-started provider player (YouTube/Vimeo/X/TikTok embeds). Ephemeral
+//! storage, no IPC, no downloads; links that leave the player go back to the app's link
+//! confirmation.
 #[cfg(not(target_os = "linux"))]
 use std::sync::{
 	Arc,
@@ -27,6 +28,21 @@ pub fn player_navigation(value: &str) -> bool {
 					"googleapis.com",
 					"vimeo.com",
 					"vimeocdn.com",
+					// X (Twitter) embeds load their tweet markup and media from these hosts.
+					"twitter.com",
+					"x.com",
+					"twimg.com",
+					"t.co",
+					// TikTok embeds load the player, its media and its translations from these.
+					"tiktok.com",
+					"tiktokv.com",
+					"tiktokcdn.com",
+					"tiktokcdn-us.com",
+					"ttwstatic.com",
+					"ipstatp.com",
+					"byteoversea.com",
+					"ibytedtos.com",
+					"muscdn.com",
 				]
 				.iter()
 				.any(|domain| host == *domain || host.ends_with(&format!(".{domain}")))
@@ -153,6 +169,10 @@ mod tests {
 			"https://www.youtube-nocookie.com/embed/KwRSAfoW5uo?autoplay=1",
 			"https://i.ytimg.com/vi/KwRSAfoW5uo/hqdefault.jpg",
 			"https://player.vimeo.com/video/76979871",
+			"https://platform.twitter.com/embed/Tweet.html?id=20",
+			"https://pbs.twimg.com/media/synthetic.jpg",
+			"https://www.tiktok.com/embed/v2/7412345678901234567",
+			"https://p16-sign.tiktokcdn-us.com/synthetic.jpg",
 			"about:blank",
 		] {
 			assert!(super::player_navigation(url), "{url}");
@@ -164,6 +184,11 @@ mod tests {
 			"https://user@www.youtube.com/",
 			"https://www.youtube.com:444/",
 			"https://discord.com/",
+			"https://x.com.evil.test/SereinApp/status/1",
+			"https://twitter.com.evil.test/",
+			"https://www.tiktok.com.evil.test/embed/v2/1",
+			"https://evil-tiktok.com/",
+			"https://user@platform.twitter.com/",
 			"serein-captcha://verification.invalid/",
 		] {
 			assert!(!super::player_navigation(url), "{url}");
